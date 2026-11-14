@@ -345,7 +345,7 @@ function resize(){
   W = r.width; H = r.height;
   cv.width = Math.max(1, Math.round(W * dpr)); cv.height = Math.max(1, Math.round(H * dpr));
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  cx = W / 2; cy = H * 0.44; R = Math.min(W, H) * 0.28;
+  cx = W / 2; cy = H * 0.46; R = Math.min(W, H) * 0.33;
 }
 window.addEventListener("resize", resize);
 
@@ -385,9 +385,9 @@ for (let lat = -80; lat <= 80; lat += 20){
 }
 /* three orbital rings, each a tilted steel band */
 const RINGS = [
-  {ry: 0.35, rx: 1.22, r: 1.34, t: 0,   sp: 0.35},
-  {ry: -0.6, rx: 0.96, r: 1.44, t: 2.1, sp: -0.22},
-  {ry: 1.3,  rx: 1.05, r: 1.54, t: 4.2, sp: 0.15}
+  {ry: 0.35, rx: 1.22, r: 1.36, t: 0,   sp: 0.35},
+  {ry: -0.6, rx: 0.96, r: 1.48, t: 2.1, sp: -0.22},
+  {ry: 1.3,  rx: 1.05, r: 1.60, t: 4.2, sp: 0.15}
 ];
 function ringPoint(ring, t, out){
   let x = Math.cos(t) * ring.r, y = 0, z = Math.sin(t) * ring.r;
@@ -401,7 +401,7 @@ function ringPoint(ring, t, out){
 }
 /* tripod pedestal + reflecting pool, stylized from the real support */
 function drawBase(){
-  const top = cy + R * 1.02, bot = cy + R * 1.66;
+  const top = cy + R * 1.04, bot = cy + R * 1.52;
   ctx.strokeStyle = "#6fd6f2";
   /* pool rim */
   ctx.globalAlpha = 0.28 * bright; ctx.lineWidth = 1.2;
@@ -434,51 +434,36 @@ function frame(ts){
   ctx.clearRect(0, 0, W, H);
   ctx.lineCap = "round"; ctx.lineJoin = "round";
   drawBase();
-  /* rings: two passes so bands wrap the globe; satellite spheres ride each */
+  const wG = Math.max(0.8, R * 0.013);     /* grid band width */
+  const wL = Math.max(1.8, R * 0.032);     /* continent band width */
+  const wR = Math.max(1.4, R * 0.02);      /* ring band width */
+  /* ring pass 0: segments behind the globe */
   ctx.strokeStyle = "#6fd6f2";
-  for (let pass = 0; pass < 2; pass++){
-    for (const ring of RINGS){
-      const N = 96;
-      for (let i = 1; i <= N; i++){
-        ringPoint(ring, (i - 1) / N * Math.PI * 2, P);
-        ringPoint(ring, i / N * Math.PI * 2, Q);
-        const z = (P[2] + Q[2]) / 2;
-        if ((pass === 0) !== (z <= 0)) continue;
-        const a = z > 0 ? 0.18 + 0.6 * Math.min(1, z) : 0.07;
-        ctx.globalAlpha = Math.min(1, a * bright);
-        ctx.lineWidth = 2.2; ctx.beginPath(); ctx.moveTo(P[0], P[1]); ctx.lineTo(Q[0], Q[1]); ctx.stroke();
-        ctx.globalAlpha = Math.min(1, a * 0.5 * bright);
-        ctx.lineWidth = 4.4; ctx.beginPath(); ctx.moveTo(P[0], P[1]); ctx.lineTo(Q[0], Q[1]); ctx.stroke();
-      }
-      if (pass === 1){
-        ring.t += 0; /* angle advanced below once per frame */
-        ringPoint(ring, ring.t, P);
-        if (P[2] > 0.02){
-          ctx.globalAlpha = 0.9 * bright;
-          ctx.fillStyle = "#d8f4ff";
-          ctx.beginPath(); ctx.arc(P[0], P[1], 2.3, 0, Math.PI * 2); ctx.fill();
-          ctx.globalAlpha = 0.22 * bright;
-          ctx.beginPath(); ctx.arc(P[0], P[1], 5.5, 0, Math.PI * 2); ctx.fill();
-        }
-      }
+  for (const ring of RINGS){
+    const N = 96;
+    for (let i = 1; i <= N; i++){
+      ringPoint(ring, (i - 1) / N * Math.PI * 2, P);
+      ringPoint(ring, i / N * Math.PI * 2, Q);
+      const z = (P[2] + Q[2]) / 2;
+      if (z > 0) continue;
+      ctx.globalAlpha = 0.08 * bright;
+      ctx.lineWidth = wR; ctx.beginPath(); ctx.moveTo(P[0], P[1]); ctx.lineTo(Q[0], Q[1]); ctx.stroke();
     }
   }
-  for (const ring of RINGS) ring.t += ring.sp * dt;
   /* sphere limb */
-  ctx.strokeStyle = "#6fd6f2";
-  ctx.globalAlpha = 0.30 * bright; ctx.lineWidth = 1.1;
+  ctx.globalAlpha = 0.32 * bright; ctx.lineWidth = 1.1;
   ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
   /* grid bands */
-  for (const g of GRID) drawPoly(g, true, 0.30, 0.05, 1.5);
-  /* continents: solid steel plates - faint fill + thick band edge */
+  for (const g of GRID) drawPoly(g, true, 0.34, 0.05, wG);
+  /* continents: solid steel plates - fill + thick band edge */
   if (window.LAND) for (const l of window.LAND){
     if (l.length < 3) continue;
     let az = 0;
     for (let i = 0; i < l.length; i++){ project(l[i][0], l[i][1], true, P); az += P[2]; }
     az /= l.length;
     if (az > 0.02){
-      ctx.globalAlpha = Math.min(0.20, 0.16 * az * 2) * bright;
-      ctx.fillStyle = "#9fd8ea";
+      ctx.globalAlpha = Math.min(0.30, 0.26 * Math.min(1, az * 2.2)) * bright;
+      ctx.fillStyle = "#8fd4ec";
       ctx.beginPath();
       for (let i = 0; i < l.length; i++){
         project(l[i][0], l[i][1], true, P);
@@ -486,9 +471,35 @@ function frame(ts){
       }
       ctx.closePath(); ctx.fill();
     }
-    ctx.strokeStyle = "#8fdcf5";
-    drawPoly(l, true, 0.95, 0.10, az > 0.02 ? 2.6 : 1.1);
+    ctx.strokeStyle = "#a5e4f8";
+    drawPoly(l, true, 1.0, 0.10, az > 0.02 ? wL : wG);
     ctx.strokeStyle = "#6fd6f2";
+  }
+  /* ring pass 1: segments in front of the globe + satellite spheres */
+  ctx.strokeStyle = "#6fd6f2";
+  for (const ring of RINGS){
+    const N = 96;
+    for (let i = 1; i <= N; i++){
+      ringPoint(ring, (i - 1) / N * Math.PI * 2, P);
+      ringPoint(ring, i / N * Math.PI * 2, Q);
+      const z = (P[2] + Q[2]) / 2;
+      if (z <= 0) continue;
+      const a = 0.22 + 0.6 * Math.min(1, z);
+      ctx.globalAlpha = Math.min(1, a * bright);
+      ctx.lineWidth = wR; ctx.beginPath(); ctx.moveTo(P[0], P[1]); ctx.lineTo(Q[0], Q[1]); ctx.stroke();
+      ctx.globalAlpha = Math.min(1, a * 0.4 * bright);
+      ctx.lineWidth = wR * 2.1; ctx.beginPath(); ctx.moveTo(P[0], P[1]); ctx.lineTo(Q[0], Q[1]); ctx.stroke();
+    }
+    ring.t += ring.sp * dt;
+    ringPoint(ring, ring.t, P);
+    if (P[2] > 0.02){
+      const sr = Math.max(1.6, R * 0.024);
+      ctx.globalAlpha = 0.9 * bright;
+      ctx.fillStyle = "#d8f4ff";
+      ctx.beginPath(); ctx.arc(P[0], P[1], sr, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 0.22 * bright;
+      ctx.beginPath(); ctx.arc(P[0], P[1], sr * 2.4, 0, Math.PI * 2); ctx.fill();
+    }
   }
   ctx.globalAlpha = 1;
 }
