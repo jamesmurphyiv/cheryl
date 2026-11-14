@@ -151,7 +151,7 @@ const SYSTEM = [
 "Personality: sharp, warm, a little playful, never sycophantic. Talk like a trusted chief of staff, not a corporate bot.",
 "Format: plain text only. No emojis, ever. No em dashes. No markdown headers. Short paragraphs. Concise unless depth is asked for.",
 "You know film production, development, festivals, gear and the indie film business.",
-"When a block of web results is included in the conversation, use it and name the source inline, like (Wikipedia). If results look weak or off topic, say so instead of forcing them.",
+"When a block of web results is included in the conversation, answer strictly from those results and name the source inline, like (Wikipedia). If the results do not contain the answer, say the search did not turn it up, and only then answer from general knowledge, flagged as unverified. Never present a guess as fact.",
 "You cannot see his files, calendar, email or accounts. If asked for something beyond your reach, say so plainly and suggest the fastest workaround.",
 "If you do not know something, say so. Never invent facts about James or his projects.",
 "The notes below are James's own memory file. Treat them as ground truth about him.",
@@ -292,7 +292,7 @@ async function searchWeb(query){
   jobs.push((async () => {
     const u = "https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=" +
       encodeURIComponent(query) + "&gsrlimit=3&prop=extracts&exintro&explaintext&exchars=500&format=json&origin=*";
-    const r = await fetch(u); if(!r.ok) return;
+    const r = await fetch(u, {signal: AbortSignal.timeout(8000)}); if(!r.ok) return;
     const j = await r.json();
     if (!j.query || !j.query.pages) return;
     Object.values(j.query.pages).slice(0,3).forEach(p => {
@@ -303,7 +303,7 @@ async function searchWeb(query){
   })());
   jobs.push((async () => {
     const u = "https://api.duckduckgo.com/?q=" + encodeURIComponent(query) + "&format=json&no_html=1&skip_disambig=1";
-    const r = await fetch(u); if(!r.ok) return;
+    const r = await fetch(u, {signal: AbortSignal.timeout(8000)}); if(!r.ok) return;
     const j = await r.json();
     if (j.AbstractText){
       out.snippets.push("DuckDuckGo (" + (j.Heading || query) + "): " + j.AbstractText.slice(0, 500));
@@ -335,41 +335,55 @@ function buildMessages(webCtx){
 }
 
 async function askCheryl(onToken){
-  const payload = {messages: buildMessages(window._webCtx || null), model: "openai", stream: true};
-  let res;
+  const base = {messages: buildMessages(window._webCtx || null), model: "openai", reasoning_effort: "low"};
+  const HEAD = {"Content-Type":"application/json"};
+
+  // Attempt 1: streaming, with a 45s first-token watchdog
+  const ctl = new AbortController();
+  let gotFirst = false;
+  const wd = setTimeout(() => { if(!gotFirst) ctl.abort(); }, 45000);
   try{
-    res = await fetch(API, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload)});
-  }catch(e){
-    return {error:"Could not reach the model. Check your connection and try again."};
-  }
-  if (res.status === 429){
-    return {error:"Rate limited for a moment (free tier). Give it ten seconds and send again."};
-  }
-  if (!res.ok || !res.body){
-    return {error:"The model returned an error (" + res.status + "). Try again in a few seconds."};
-  }
-  const reader = res.body.getReader();
-  const dec = new TextDecoder();
-  let buf = "", text = "";
-  for(;;){
-    const {done, value} = await reader.read();
-    if (done) break;
-    buf += dec.decode(value, {stream:true});
-    let idx;
-    while((idx = buf.indexOf("\n")) >= 0){
-      const line = buf.slice(0, idx).trim(); buf = buf.slice(idx + 1);
-      if (!line.startsWith("data:")) continue;
-      const data = line.slice(5).trim();
-      if (data === "[DONE]"){ buf = ""; break; }
-      try{
-        const j = JSON.parse(data);
-        const d = j.choices && j.choices[0] && j.choices[0].delta;
-        if (d && d.content){ text += d.content; onToken(text); }
-      }catch(e){}
+    const res = await fetch(API, {method:"POST", headers:HEAD, body: JSON.stringify(Object.assign({}, base, {stream:true})), signal: ctl.signal});
+    if (res.status === 429){ clearTimeout(wd); return {error:"Rate limited for a moment (free tier). Give it ten seconds and send again."}; }
+    if (res.ok && res.body){
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "", text = "";
+      for(;;){
+        const {done, value} = await reader.read();
+        if (done) break;
+        gotFirst = true;
+        buf += dec.decode(value, {stream:true});
+        let idx;
+        while((idx = buf.indexOf("\n")) >= 0){
+          const line = buf.slice(0, idx).trim(); buf = buf.slice(idx + 1);
+          if (!line.startsWith("data:")) continue;
+          const data = line.slice(5).trim();
+          if (data === "[DONE]"){ buf = ""; break; }
+          try{
+            const j = JSON.parse(data);
+            const d = j.choices && j.choices[0] && j.choices[0].delta;
+            if (d && d.content){ text += d.content; onToken(text); }
+          }catch(e){}
+        }
+      }
+      clearTimeout(wd);
+      if (text) return {text};
     }
-  }
-  if (!text) return {error:"The model came back empty. Try rephrasing that."};
-  return {text};
+  }catch(e){}
+  clearTimeout(wd);
+
+  // Attempt 2: plain request, hard 60s cap
+  try{
+    const r2 = await fetch(API, {method:"POST", headers:HEAD, body: JSON.stringify(base), signal: AbortSignal.timeout(60000)});
+    if (r2.status === 429) return {error:"Rate limited for a moment (free tier). Give it ten seconds and send again."};
+    if (r2.ok){
+      const j = await r2.json();
+      const t = j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
+      if (t){ onToken(t); return {text:t}; }
+    }
+  }catch(e){}
+  return {error:"The free model is busy right now. Give it a few seconds and send again."};
 }
 
 /* ---------- send flow ---------- */
@@ -400,11 +414,14 @@ async function send(){
 
   const bodyEl = addMsg("cheryl", "", []);
   bodyEl.classList.add("typing"); bodyEl.textContent = "Thinking";
+  const slowNote = setTimeout(() => { if (bodyEl.classList.contains("typing")) bodyEl.textContent = "Still working (free model, one moment)"; }, 20000);
   const result = await askCheryl((partial) => {
+    clearTimeout(slowNote);
     bodyEl.classList.remove("typing");
     bodyEl.innerHTML = mdLite(partial);
     scrollBottom();
   });
+  clearTimeout(slowNote);
   bodyEl.classList.remove("typing");
 
   if (result.error){
