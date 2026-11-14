@@ -9,11 +9,11 @@
 <title>Cheryl</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/svg+xml" href="icon.svg">
-<link rel="apple-touch-icon" href="icon.svg">
+<link rel="apple-touch-icon" href="icon-180.png">
 <style>
   :root{
     --bg:#050505; --ink:#eceae4; --dim:#8a887f; --line:#1d1d1b; --panel:#0d0d0c; --panel2:#131311;
-    --accent:#eceae4;
+    --accent:#eceae4; --orb:#6fd6f2;
   }
   *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{height:100%}
@@ -89,18 +89,55 @@
     font-family:ui-monospace,Menlo,monospace;font-size:13px;line-height:1.6;padding:14px;resize:none;outline:none}
   .ovrow{display:flex;gap:8px;margin-top:12px}
   .ovrow .chip{font-size:12px;padding:9px 16px}
+
+  .orbwrap{flex:none;display:flex;flex-direction:column;align-items:center;padding:20px 0 4px;border-bottom:1px solid var(--line)}
+  .orb{position:relative;width:132px;height:132px;cursor:pointer}
+  .orb svg{position:absolute;inset:0;width:100%;height:100%}
+  .ring{fill:none;stroke:var(--orb);transform-origin:66px 66px}
+  .r1{stroke-width:1.1;stroke-dasharray:46 14 6 14;opacity:.55;animation:spin 44s linear infinite}
+  .r2{stroke-width:1;stroke-dasharray:2 9;opacity:.35;animation:spinr 68s linear infinite}
+  .r3{stroke-width:1.4;stroke-dasharray:90 22 8 22;opacity:.7;animation:spin 26s linear infinite reverse}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes spinr{to{transform:rotate(-360deg)}}
+  .core{position:absolute;left:50%;top:50%;width:52px;height:52px;border-radius:50%;
+    background:radial-gradient(circle at 50% 42%,#fff 0%,#d8f2ff 24%,var(--orb) 58%,rgba(111,214,242,.12) 82%,transparent 100%);
+    box-shadow:0 0 22px 5px rgba(111,214,242,.32),0 0 70px 18px rgba(111,214,242,.10);
+    animation:breathe 3.4s ease-in-out infinite}
+  @keyframes breathe{0%,100%{transform:translate(-50%,-50%) scale(1)}50%{transform:translate(-50%,-50%) scale(1.07)}}
+  .orb.thinking .r1{animation-duration:3s}
+  .orb.thinking .r2{animation-duration:4.4s}
+  .orb.thinking .r3{animation-duration:2.2s}
+  .orb.thinking .core{animation-duration:.9s}
+  .orb.listening .ring{opacity:1;stroke:#b8ecff}
+  .orb.listening .core{animation-duration:1.4s;box-shadow:0 0 30px 8px rgba(150,230,255,.5),0 0 90px 26px rgba(111,214,242,.16)}
+  .orb.speaking .core{animation:speakpulse .6s ease-in-out infinite}
+  @keyframes speakpulse{0%,100%{transform:translate(-50%,-50%) scale(1)}50%{transform:translate(-50%,-50%) scale(1.16)}}
+  .orblabel{margin-top:12px;font-family:ui-monospace,Menlo,monospace;font-size:9.5px;letter-spacing:.34em;color:var(--dim);text-transform:uppercase}
 </style>
 </head>
 <body>
 <div class="app">
   <header>
     <div class="wordmark">Cheryl<small>Cognitive Hub for Executive Research, Yielding Leverage</small></div>
-    <div class="status"><span class="dot"></span>open model<br>no tokens, no bill</div>
+    <div class="status"><span class="dot"></span>sys online<br>open core, free tier</div>
   </header>
+
+  <div class="orbwrap">
+    <div class="orb idle" id="orb" title="Tap to talk">
+      <svg viewBox="0 0 132 132" aria-hidden="true">
+        <circle class="ring r1" cx="66" cy="66" r="62"/>
+        <circle class="ring r2" cx="66" cy="66" r="53"/>
+        <circle class="ring r3" cx="66" cy="66" r="44"/>
+      </svg>
+      <div class="core"></div>
+    </div>
+    <div class="orblabel" id="orbLabel">Standby</div>
+  </div>
 
   <div class="tools">
     <button class="chip" id="tSearch">Search: off</button>
     <button class="chip" id="tSpeak">Voice: off</button>
+    <button class="chip" id="tHands">Hands-free: off</button>
     <div class="spacer"></div>
     <button class="chip" id="tMemory">Memory</button>
     <button class="chip" id="tNew">New chat</button>
@@ -160,7 +197,7 @@ const SYSTEM = [
 "=== MEMORY FILE ==="
 ].join("\n");
 
-const GREETING = "James. I'm Cheryl: your prototype assistant, built today while you were on set.\n\nI run on a free open model, so there are no tokens and no bill. I know the basics about you from the memory file (tap Memory up top to see it and edit it), I can search the web when you flip Search on, and I can talk out loud if you enable Voice.\n\nTry me:";
+const GREETING = "James. I'm Cheryl: your prototype assistant, built today while you were on set.\n\nI run on a free open model, so there are no tokens and no bill. I know the basics about you from the memory file (tap Memory up top to see it and edit it), I can search the web when you flip Search on, and I can talk out loud if you enable Voice. Tap the orb any time to talk to me.\n\nTry me:";
 
 const QUICK = [
   "What do you know about me?",
@@ -174,7 +211,7 @@ const store = {
   set(k, v){ try{ localStorage.setItem("cheryl_"+k, JSON.stringify(v)); }catch(e){} }
 };
 let history = store.get("history", []);
-let settings = store.get("settings", {search:false, speak:false});
+let settings = store.get("settings", {search:false, speak:false, hf:false});
 let memory = store.get("memory", DEFAULT_MEMORY);
 let busy = false;
 
@@ -184,6 +221,7 @@ const input = document.getElementById("input");
 const sendBtn = document.getElementById("send");
 const tSearch = document.getElementById("tSearch");
 const tSpeak = document.getElementById("tSpeak");
+const tHands = document.getElementById("tHands");
 const tMemory = document.getElementById("tMemory");
 const tNew = document.getElementById("tNew");
 const micBtn = document.getElementById("mic");
@@ -254,9 +292,12 @@ function paintSettings(){
   tSearch.classList.toggle("on", settings.search);
   tSpeak.textContent = "Voice: " + (settings.speak ? "on" : "off");
   tSpeak.classList.toggle("on", settings.speak);
+  tHands.textContent = "Hands-free: " + (settings.hf ? "on" : "off");
+  tHands.classList.toggle("on", settings.hf);
 }
 tSearch.addEventListener("click", () => { settings.search = !settings.search; store.set("settings", settings); paintSettings(); });
 tSpeak.addEventListener("click", () => { settings.speak = !settings.speak; store.set("settings", settings); paintSettings(); if(!settings.speak && window.speechSynthesis) speechSynthesis.cancel(); });
+tHands.addEventListener("click", () => { settings.hf = !settings.hf; store.set("settings", settings); paintSettings(); });
 tNew.addEventListener("click", () => { if(busy) return; history = []; store.set("history", history); renderAll(); });
 
 /* ---------- memory overlay ---------- */
@@ -265,31 +306,77 @@ document.getElementById("memClose").addEventListener("click", () => memOverlay.c
 document.getElementById("memSave").addEventListener("click", () => { memory = memArea.value; store.set("memory", memory); memOverlay.classList.remove("open"); });
 document.getElementById("memReset").addEventListener("click", () => { memArea.value = DEFAULT_MEMORY; });
 
+/* ---------- orb ---------- */
+const orb = document.getElementById("orb");
+const orbLabel = document.getElementById("orbLabel");
+let orbState = "idle";
+function setOrb(s){
+  orbState = s;
+  orb.className = "orb " + s;
+  orbLabel.textContent = {idle:"Standby", listening:"Listening", thinking:"Thinking", speaking:"Speaking"}[s] || s;
+}
+
 /* ---------- voice ---------- */
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, listening = false;
+
+let voice = null;
+function pickVoice(){
+  if (!window.speechSynthesis) return;
+  const vs = speechSynthesis.getVoices().filter(v => v.lang && v.lang.toLowerCase().startsWith("en"));
+  if (!vs.length) return;
+  const pref = ["samantha","google us english","aria","jenny","zira","victoria","karen","moira","tessa","serena","allison","ava","susan","kate"];
+  for (const p of pref){
+    const hit = vs.find(v => (v.name || "").toLowerCase().includes(p));
+    if (hit){ voice = hit; return; }
+  }
+  voice = vs.find(v => /female/i.test(v.name)) || vs[0];
+}
+if (window.speechSynthesis){
+  pickVoice();
+  speechSynthesis.onvoiceschanged = pickVoice;
+}
+
+function startListening(){
+  if (!SR || listening) return;
+  if (window.speechSynthesis) speechSynthesis.cancel();
+  rec = new SR();
+  rec.lang = "en-US"; rec.interimResults = false; rec.maxAlternatives = 1;
+  rec.onresult = (ev) => {
+    const text = ev.results[0][0].transcript;
+    input.value = text; autogrow(); send();
+  };
+  rec.onend = () => { listening = false; micBtn.classList.remove("listening"); if (orbState === "listening") setOrb(busy ? "thinking" : "idle"); };
+  rec.onerror = () => { listening = false; micBtn.classList.remove("listening"); if (orbState === "listening") setOrb("idle"); };
+  try{ rec.start(); listening = true; micBtn.classList.add("listening"); setOrb("listening"); }catch(e){}
+}
+function toggleMic(){
+  if (listening){ try{ rec.stop(); }catch(e){} return; }
+  startListening();
+}
 if (SR){
   micBtn.style.display = "flex";
-  let rec = null, listening = false;
-  micBtn.addEventListener("click", () => {
-    if (listening){ try{ rec.stop(); }catch(e){} return; }
-    rec = new SR();
-    rec.lang = "en-US"; rec.interimResults = false; rec.maxAlternatives = 1;
-    rec.onresult = (ev) => {
-      const text = ev.results[0][0].transcript;
-      input.value = text; autogrow(); send();
-    };
-    rec.onend = () => { listening = false; micBtn.classList.remove("listening"); };
-    rec.onerror = () => { listening = false; micBtn.classList.remove("listening"); };
-    try{ rec.start(); listening = true; micBtn.classList.add("listening"); }catch(e){}
-  });
+  micBtn.addEventListener("click", toggleMic);
+} else {
+  orb.style.cursor = "default";
 }
+orb.addEventListener("click", () => { if (SR) toggleMic(); });
+
 function speak(text){
-  if (!settings.speak || !window.speechSynthesis) return;
+  if (!settings.speak || !window.speechSynthesis) return false;
   speechSynthesis.cancel();
   const clean = text.replace(/\*\*|`/g, "").slice(0, 1200);
   const u = new SpeechSynthesisUtterance(clean);
+  if (voice) u.voice = voice;
   u.rate = 1.02; u.pitch = 1;
+  u.onstart = () => setOrb("speaking");
+  u.onend = () => {
+    if (orbState === "speaking"){
+      if (settings.hf && SR) startListening(); else setOrb("idle");
+    }
+  };
   speechSynthesis.speak(u);
+  return true;
 }
 
 /* ---------- search ---------- */
@@ -410,6 +497,7 @@ async function send(){
   const text = input.value.trim();
   if (!text || busy) return;
   busy = true; sendBtn.disabled = true;
+  setOrb("thinking");
   input.value = ""; autogrow();
 
   let q = text, forceSearch = false;
@@ -446,12 +534,14 @@ async function send(){
   if (result.error){
     bodyEl.textContent = result.error;
     history.push({role:"assistant", content:result.error});
+    setOrb("idle");
   } else {
     bodyEl.innerHTML = mdLite(result.text);
     const entry = {role:"assistant", content:result.text};
     if (sources.length) entry.sources = sources;
     history.push(entry);
-    speak(result.text);
+    const spoke = speak(result.text);
+    if (!spoke) setOrb("idle");
   }
   store.set("history", history);
   renderAll();
