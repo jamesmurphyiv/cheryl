@@ -1,4 +1,4 @@
-const CACHE = "cheryl-v3";
+const CACHE = "cheryl-v4";
 const ASSETS = ["./", "index.html", "manifest.json", "icon.svg"];
 
 self.addEventListener("install", (e) => {
