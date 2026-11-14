@@ -555,15 +555,17 @@ function frame(ts){
         const y2 = y * cT - z * sT, z2 = y * sT + z * cT;
         if (z2 <= 0.08) continue;
         const sx = cx + x * R, sy = cy - y2 * R;
+        const cw = Math.max(1.2, cellS * cosla);   /* cells narrow toward the poles */
+        const chw = cw / 2;
         const gradx = dlon * cosla * coslo * R + dlat * (-sinla * sinlo * R);
         const grady = dlon * (-cosla * sinlo * sT * R) + dlat * (-(cosla * cT + sinla * coslo * sT) * R);
         const b = (gradx * 0.707 + grady * 0.707) * K + e * 0.0032;
-        if (b > 0.55) lit[2].rect(sx - half, sy - half, cellS, cellS);
-        else if (b > 0.22) lit[1].rect(sx - half, sy - half, cellS, cellS);
-        else if (b > 0.08) lit[0].rect(sx - half, sy - half, cellS, cellS);
-        else if (b < -0.42) shd[2].rect(sx - half, sy - half, cellS, cellS);
-        else if (b < -0.18) shd[1].rect(sx - half, sy - half, cellS, cellS);
-        else if (b < -0.07) shd[0].rect(sx - half, sy - half, cellS, cellS);
+        if (b > 0.55) lit[2].rect(sx - chw, sy - half, cw, cellS);
+        else if (b > 0.22) lit[1].rect(sx - chw, sy - half, cw, cellS);
+        else if (b > 0.08) lit[0].rect(sx - chw, sy - half, cw, cellS);
+        else if (b < -0.42) shd[2].rect(sx - chw, sy - half, cw, cellS);
+        else if (b < -0.18) shd[1].rect(sx - chw, sy - half, cw, cellS);
+        else if (b < -0.07) shd[0].rect(sx - chw, sy - half, cw, cellS);
       }
     }
     ctx.fillStyle = "#f4fcff";
