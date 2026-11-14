@@ -124,6 +124,7 @@
   <p class="hint">This is the notes file Cheryl reads before every answer: the same idea as a Jarvis brain, but a text file you own.
   Edit it any time. It is stored only on this device, never sent anywhere except into your own chats here.</p>
   <textarea id="memory" spellcheck="false"></textarea>
+  <p class="hint" id="memCount" style="margin:8px 0 0"></p>
   <div class="ovrow">
     <button class="chip" id="memSave">Save</button>
     <button class="chip" id="memReset">Reset to default</button>
@@ -188,6 +189,12 @@ const tNew = document.getElementById("tNew");
 const micBtn = document.getElementById("mic");
 const memOverlay = document.getElementById("memOverlay");
 const memArea = document.getElementById("memory");
+const memCount = document.getElementById("memCount");
+function paintMemCount(){
+  const n = memArea.value.length;
+  memCount.textContent = n.toLocaleString("en-US") + " characters" + (n > 8000 ? " - long files make every answer slower on the free model" : "");
+}
+memArea.addEventListener("input", paintMemCount);
 
 function esc(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 function mdLite(s){
@@ -253,7 +260,7 @@ tSpeak.addEventListener("click", () => { settings.speak = !settings.speak; store
 tNew.addEventListener("click", () => { if(busy) return; history = []; store.set("history", history); renderAll(); });
 
 /* ---------- memory overlay ---------- */
-tMemory.addEventListener("click", () => { memArea.value = memory; memOverlay.classList.add("open"); });
+tMemory.addEventListener("click", () => { memArea.value = memory; paintMemCount(); memOverlay.classList.add("open"); });
 document.getElementById("memClose").addEventListener("click", () => memOverlay.classList.remove("open"));
 document.getElementById("memSave").addEventListener("click", () => { memory = memArea.value; store.set("memory", memory); memOverlay.classList.remove("open"); });
 document.getElementById("memReset").addEventListener("click", () => { memArea.value = DEFAULT_MEMORY; });
