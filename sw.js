@@ -1,5 +1,5 @@
 const CACHE = "cheryl-v5";
-const ASSETS = ["./", "index.html", "manifest.json", "icon.svg", "icon-180.png", "icon-512.png"];
+const ASSETS = ["./", "index.html", "manifest.json", "icon.svg"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
