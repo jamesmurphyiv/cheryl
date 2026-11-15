@@ -1041,11 +1041,15 @@ function pickVoice(){
 }
 if (window.speechSynthesis){ pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
 
+const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const VTEST = /[?&]vtest=1/.test(location.search);
 let activated = false, lastHeard = "", lastHeardAt = 0, restartTimer = null;
 let convUntil = 0;
 function convOpen(){ return Date.now() < convUntil; }
 function convExtend(){ convUntil = Date.now() + 25000; }
+function voiceWanted(){ return activated && settings.hf && !manualStop && !permDenied && !busy && !speakLock && state !== "speaking" && state !== "thinking"; }
 let heard = "", heardInterim = "", silenceTimer = null;
+let netBackoff = 0, captureFails = 0, meterShedForRec = false, startDog = null, recDidStart = false, lastRecErr = "", permDenied = false;
 function setVOut(t){ const el = $("vOut"); if (el) el.textContent = t; }
 setVOut(window.speechSynthesis ? "VOICE OUT: READY" : "VOICE OUT: NOT SUPPORTED");
 function norm(t){ return t.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim(); }
@@ -1095,12 +1099,35 @@ function flushPending(){
   logEvent('Answering queued voice: "' + t.slice(0, 50) + '"', true);
   input.value = t; autogrow(); send();
 }
+function makeRec(){ return VTEST ? new FakeRec() : new SR(); }
+function scheduleRestart(delay){
+  if (restartTimer) return; /* one pending restart at a time */
+  restartTimer = setTimeout(() => {
+    restartTimer = null;
+    if (voiceWanted() && !listening) startListening();
+  }, delay);
+}
 function startListening(){
-  if (!SR || listening || busy || speakLock) return;
+  if ((!SR && !VTEST) || listening || busy || speakLock) return;
   if (state === "speaking" || state === "thinking") return;
   if (window.speechSynthesis) speechSynthesis.cancel();
-  rec = new SR();
-  rec.lang = "en-US"; rec.interimResults = true; rec.continuous = true; rec.maxAlternatives = 1;
+  rec = makeRec();
+  rec.lang = "en-US"; rec.interimResults = true; rec.continuous = !IS_IOS; rec.maxAlternatives = 1;
+  recDidStart = false; lastRecErr = "";
+  clearTimeout(startDog);
+  startDog = setTimeout(() => {
+    if (listening && !recDidStart){
+      logEvent("Recognizer start stuck - resetting ears");
+      listening = false;
+      try{ rec.abort(); }catch(e){}
+      scheduleRestart(900);
+    }
+  }, 2500);
+  rec.onstart = () => {
+    recDidStart = true; clearTimeout(startDog);
+    netBackoff = 0; captureFails = 0;
+    if (meterShedForRec){ meterShedForRec = false; logEvent("Ears OK - level meter stays paused (mic is shared)", true); }
+  };
   rec.onresult = (ev) => {
     if (window.speechSynthesis && speechSynthesis.speaking && speakLock) return;
     if (window.speechSynthesis && speechSynthesis.speaking && !speakLock){ try{ speechSynthesis.cancel(); }catch(e){} }
@@ -1116,6 +1143,8 @@ function startListening(){
       else heardInterim = r[0].transcript || "";
     }
     if (ev.results[ev.results.length - 1].isFinal) heardInterim = "";
+    /* wake word on interim results too: the conversation opens the instant her name is heard */
+    if (!convOpen() && heardInterim && NAME_RE.test(heardInterim)) convExtend();
     clearTimeout(silenceTimer);
     silenceTimer = setTimeout(() => {
       if (busy || state === "speaking" || state === "thinking"){
@@ -1123,19 +1152,27 @@ function startListening(){
         return;
       }
       flushHeard();
-    }, gotFinal ? 800 : 1200);
+    }, gotFinal ? 900 : 1400);
+    if (heard.length > 350) flushHeard();
   };
   rec.onend = () => {
-    listening = false;
+    listening = false; recDidStart = false;
     $("mic").classList.remove("listening"); $("mic2").classList.remove("listening");
     if (state === "listening") setState(busy ? "thinking" : "idle");
-    if (settings.hf && activated && !manualStop){ clearTimeout(restartTimer); restartTimer = setTimeout(() => { if (!busy && !manualStop) startListening(); }, 350); }
+    if (heard.trim() && !silenceTimer) silenceTimer = setTimeout(flushHeard, 400);
+    if (voiceWanted()){
+      const d = lastRecErr === "network" ? netBackoff : (lastRecErr === "audio-capture" ? 800 : 300);
+      scheduleRestart(d);
+    }
+    lastRecErr = "";
   };
   rec.onerror = (ev) => {
-    listening = false;
-    $("mic").classList.remove("listening"); $("mic2").classList.remove("listening");
-    if (state === "listening") setState("idle");
-    if (ev && (ev.error === "not-allowed" || ev.error === "service-not-allowed")){
+    const err = (ev && ev.error) || "";
+    lastRecErr = err;
+    if (err === "not-allowed" || err === "service-not-allowed"){
+      listening = false; permDenied = true;
+      $("mic").classList.remove("listening"); $("mic2").classList.remove("listening");
+      if (state === "listening") setState("idle");
       if (typeof autoArming !== "undefined" && autoArming){
         $("vTap").textContent = "TAP ONCE TO ARM MIC";
         logEvent("Browser blocked auto-mic - needs one tap");
@@ -1146,17 +1183,49 @@ function startListening(){
       logEvent("Mic permission denied - check browser site settings");
       return;
     }
-    if (settings.hf && activated && !manualStop){ clearTimeout(restartTimer); restartTimer = setTimeout(() => { if (!busy && !manualStop) startListening(); }, 1200); }
+    if (err === "network"){
+      netBackoff = Math.min(netBackoff ? netBackoff * 2 : 1500, 15000);
+      $("vTap").textContent = "VOICE NET HICCUP - RETRYING";
+      logEvent("Voice network error - retrying in " + Math.round(netBackoff / 1000) + "s");
+      return; /* onend schedules the retry with the backoff */
+    }
+    if (err === "audio-capture"){
+      captureFails++;
+      logEvent("Mic capture glitch - resetting ears" + (captureFails > 1 ? " (pausing level meter)" : ""));
+      if (captureFails > 1 && window.__micMeter){ window.__micMeter.stop(); meterShedForRec = true; }
+      return;
+    }
+    if (err && err !== "no-speech" && err !== "aborted") logEvent("Voice error: " + err);
+    /* no-speech just means a quiet window; onend restarts quickly */
   };
   try{
     rec.start(); listening = true;
     $("mic").classList.add("listening"); $("mic2").classList.add("listening");
     setState("listening");
-  }catch(e){}
+  }catch(e){ listening = false; scheduleRestart(1200); }
 }
+/* ?vtest=1: scripted fake recognizer so the whole voice pipeline (wake word,
+   flush, queue, restart loop) can be checked without a mic. Runs once per load. */
+function FakeRec(){ this._timers = []; }
+FakeRec.prototype.start = function(){
+  const fire = (ms, fn) => this._timers.push(setTimeout(fn, ms));
+  const res = (txt, fin) => ({ 0: { transcript: txt }, isFinal: fin, length: 1 });
+  fire(50, () => { if (this.onstart) this.onstart(); });
+  if (!window.__vtestRan){
+    window.__vtestRan = true;
+    fire(600, () => { if (this.onresult) this.onresult({ resultIndex: 0, results: [res("cheryl", false)] }); });
+    fire(1100, () => { if (this.onresult) this.onresult({ resultIndex: 0, results: [res("cheryl what is the weather tomorrow", true)] }); });
+    fire(2600, () => { if (this.onend) this.onend(); });
+  } else {
+    fire(1200, () => { if (this.onerror) this.onerror({ error: "no-speech" }); if (this.onend) this.onend(); });
+  }
+};
+FakeRec.prototype.stop = function(){ this._timers.forEach(clearTimeout); if (this.onend) this.onend(); };
+FakeRec.prototype.abort = FakeRec.prototype.stop;
+if (VTEST){ activated = true; setTimeout(() => { logEvent("VTEST: scripted ears on"); startListening(); }, 800); }
 let manualStop = false;
 function toggleMic(){
-  activated = true; store.set("activated", 1);
+  activated = true; store.set("activated", 1); permDenied = false;
   if (listening){ manualStop = true; window.__micMeterWanted = false; if (window.__micMeter) window.__micMeter.stop(); heard = ""; heardInterim = ""; try{ rec.stop(); }catch(e){} return; }
   manualStop = false;
   window.__micMeterWanted = true; if (window.__micMeter) window.__micMeter.start();
@@ -1170,7 +1239,7 @@ document.addEventListener("pointerdown", function arm(ev){
   if (activated) return;
   const tgt = ev.target;
   if (tgt && tgt.closest && (tgt.closest("#mic") || tgt.closest("#mic2"))) return;
-  activated = true; store.set("activated", 1);
+  activated = true; store.set("activated", 1); permDenied = false;
   window.__micMeterWanted = true; if (window.__micMeter) window.__micMeter.start();
   if (window.speechSynthesis){
     try{ const wu = new SpeechSynthesisUtterance(" "); wu.volume = 0; speechSynthesis.speak(wu); }catch(e){}
@@ -1207,8 +1276,10 @@ window.addEventListener("keydown", (e) => {
 });
 /* mic resumes whenever the page is visible again */
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden && activated && settings.hf && SR && !manualStop) startListening();
+  if (!document.hidden && voiceWanted()) startListening();
 });
+/* safety net: if every restart path dropped the ball, re-assert the ears */
+setInterval(() => { if (voiceWanted() && !listening && !restartTimer) scheduleRestart(50); }, 2500);
 /* once he has armed the mic on a visit, later visits try to start it on load;
    browsers that demand a fresh gesture fall back to the tap-to-arm note */
 let autoArming = false;
@@ -1272,7 +1343,7 @@ function speakNext(clean, first){
     speechActive = false;
     setVOut(ok ? "VOICE OUT: READY" : "VOICE OUT: BLOCKED - TAP TEST VOICE");
     if (!ok) logEvent("Voice output did not start");
-    if (state === "speaking") setState("idle");
+    if (state === "speaking" || (state === "thinking" && !busy)) setState("idle");
     speakLock = false;
     flushPending();
     if (settings.hf && SR && activated){
