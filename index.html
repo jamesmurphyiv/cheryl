@@ -1343,7 +1343,7 @@ function speakNext(clean, first){
     speechActive = false;
     setVOut(ok ? "VOICE OUT: READY" : "VOICE OUT: BLOCKED - TAP TEST VOICE");
     if (!ok) logEvent("Voice output did not start");
-    if (state === "speaking") setState("idle");
+    if (state === "speaking" || (state === "thinking" && !busy)) setState("idle");
     speakLock = false;
     flushPending();
     if (settings.hf && SR && activated){
