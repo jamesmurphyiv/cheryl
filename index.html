@@ -389,7 +389,7 @@ main.minmain{max-width:680px;margin:0 auto;padding:14px 16px 26px;display:flex;f
     const gltf = await new Promise((res, rej) => new GLTFLoader().parse(buf, "", res, rej));
 
     const renderer = new THREE.WebGLRenderer({alpha: true, antialias: true});
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
     holder.appendChild(renderer.domElement);
     const scene = new THREE.Scene();
     const cam = new THREE.PerspectiveCamera(42, 1, 0.01, 100);
@@ -505,7 +505,7 @@ main.minmain{max-width:680px;margin:0 auto;padding:14px 16px 26px;display:flex;f
       plane.rotation.x = THREE.MathUtils.degToRad(cfg.inc);
       g.add(plane);
       const ring = new THREE.Mesh(
-        new THREE.TorusGeometry(cfg.r, 0.012, 10, 160),
+        new THREE.TorusGeometry(cfg.r, 0.012, 8, 96),
         new THREE.MeshBasicMaterial({color: 0x6fd6f2, transparent: true, opacity: 0.5})
       );
       ring.rotation.x = Math.PI / 2;
@@ -527,21 +527,25 @@ main.minmain{max-width:680px;margin:0 auto;padding:14px 16px 26px;display:flex;f
     new ResizeObserver(resize).observe(holder);
     resize();
 
-    let last = performance.now();
+    let last = performance.now(), acc = 0;
+    const FROZEN = new URLSearchParams(location.search).has("f");
     function frame(now){
-      const dt = Math.min(0.05, (now - last) / 1000); last = now;
+      requestAnimationFrame(frame);
+      acc += now - last; last = now;
+      if (acc < 33) return;
+      const dt = Math.min(0.066, acc / 1000); acc = 0;
       const cls = panel ? panel.className : "";
       const speed = cls.indexOf("thinking") !== -1 ? 0.6 : cls.indexOf("speaking") !== -1 ? 0.3 : cls.indexOf("listening") !== -1 ? 0.2 : 0.12;
-      if (!new URLSearchParams(location.search).has("f")) spin.rotation.y += speed * dt;
+      if (!FROZEN) spin.rotation.y += speed * dt;
       orbiters.forEach(s => {
         s.a += s.cfg.speed * dt;
         s.mesh.position.set(Math.cos(s.a) * s.cfg.r, 0, Math.sin(s.a) * s.cfg.r);
       });
       renderer.render(scene, cam);
-      requestAnimationFrame(frame);
     }
     requestAnimationFrame(frame);
     if (fallbackCanvas) fallbackCanvas.style.display = "none";
+    window.__uniGLB = true;
     if (window.logEvent) logEvent("3D Unisphere loaded - container32 via FlightGear (GPL-2.0+)", true);
   }catch(e){
     if (window.logEvent) try{ logEvent("3D globe unavailable - canvas globe active"); }catch(_){}
@@ -681,6 +685,7 @@ function drawBase(){
 }
 let last = 0;
 function frame(ts){
+  if (window.__uniGLB) return;
   requestAnimationFrame(frame);
   if (!W) resize();
   const dt = Math.min(0.05, (ts - last) / 1000 || 0.016); last = ts;
@@ -1045,7 +1050,7 @@ function setVOut(t){ const el = $("vOut"); if (el) el.textContent = t; }
 setVOut(window.speechSynthesis ? "VOICE OUT: READY" : "VOICE OUT: NOT SUPPORTED");
 function norm(t){ return t.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim(); }
 let lastReplyNorm = "";
-const NAME_RE = /\b(cheryl|sheryl|cherry|sherri|sharell)\b/i;
+const NAME_RE = /\b(cheryl|cheryle|cheryll|sheryl|sherri|sheri|cherie|cherry|sharell|carol|gerald)\b/i;
 function flushHeard(){
   clearTimeout(silenceTimer); silenceTimer = null;
   const text = (heard + " " + heardInterim).trim();
@@ -1124,7 +1129,7 @@ function startListening(){
     listening = false;
     $("mic").classList.remove("listening"); $("mic2").classList.remove("listening");
     if (state === "listening") setState(busy ? "thinking" : "idle");
-    if (settings.hf && activated){ clearTimeout(restartTimer); restartTimer = setTimeout(() => { if (!busy) startListening(); }, 350); }
+    if (settings.hf && activated && !manualStop){ clearTimeout(restartTimer); restartTimer = setTimeout(() => { if (!busy && !manualStop) startListening(); }, 350); }
   };
   rec.onerror = (ev) => {
     listening = false;
@@ -1136,12 +1141,11 @@ function startListening(){
         logEvent("Browser blocked auto-mic - needs one tap");
         return;
       }
-      settings.hf = false; saveSettings();
       $("vTap").textContent = "MIC BLOCKED - ALLOW IN BROWSER";
-      logEvent("Mic permission denied - hands-free off");
+      logEvent("Mic permission denied - check browser site settings");
       return;
     }
-    if (settings.hf && activated){ clearTimeout(restartTimer); restartTimer = setTimeout(() => { if (!busy) startListening(); }, 1200); }
+    if (settings.hf && activated && !manualStop){ clearTimeout(restartTimer); restartTimer = setTimeout(() => { if (!busy && !manualStop) startListening(); }, 1200); }
   };
   try{
     rec.start(); listening = true;
@@ -1149,17 +1153,21 @@ function startListening(){
     setState("listening");
   }catch(e){}
 }
+let manualStop = false;
 function toggleMic(){
   activated = true; store.set("activated", 1);
-  if (listening){ heard = ""; heardInterim = ""; try{ rec.stop(); }catch(e){} return; }
+  if (listening){ manualStop = true; heard = ""; heardInterim = ""; try{ rec.stop(); }catch(e){} return; }
+  manualStop = false;
   startListening();
 }
 $("mic").addEventListener("click", toggleMic);
 $("mic2").addEventListener("click", toggleMic);
 if (!SR){ $("vTap").textContent = "VOICE INPUT NOT ON THIS BROWSER"; }
 /* browsers require one user gesture before mic + voice; the first tap arms always-on */
-document.addEventListener("pointerdown", function arm(){
+document.addEventListener("pointerdown", function arm(ev){
   if (activated) return;
+  const tgt = ev.target;
+  if (tgt && tgt.closest && (tgt.closest("#mic") || tgt.closest("#mic2"))) return;
   activated = true; store.set("activated", 1);
   if (window.speechSynthesis){
     try{ const wu = new SpeechSynthesisUtterance(" "); wu.volume = 0; speechSynthesis.speak(wu); }catch(e){}
@@ -1196,7 +1204,7 @@ window.addEventListener("keydown", (e) => {
 });
 /* mic resumes whenever the page is visible again */
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden && activated && settings.hf && SR) startListening();
+  if (!document.hidden && activated && settings.hf && SR && !manualStop) startListening();
 });
 /* once he has armed the mic on a visit, later visits try to start it on load;
    browsers that demand a fresh gesture fall back to the tap-to-arm note */
@@ -1204,7 +1212,7 @@ let autoArming = false;
 if (store.get("activated") && settings.hf && SR){
   activated = true; autoArming = true;
   startListening();
-  setTimeout(() => { autoArming = false; }, 4000);
+  setTimeout(() => { autoArming = false; }, 15000);
   logEvent("Mic auto-armed from earlier visit");
 }
 function paintModel(){
@@ -1505,7 +1513,8 @@ function timeAnswer(q){
 }
 fetchWeather();
 setInterval(fetchWeather, 20 * 60 * 1000);
-setInterval(() => { const t = $("tally"); if (t) t.classList.toggle("on", !!listening || new URLSearchParams(location.search).has("tally")); }, 400);
+const TALLY_DEMO = new URLSearchParams(location.search).has("tally");
+setInterval(() => { const t = $("tally"); if (t) t.classList.toggle("on", !!listening || TALLY_DEMO); }, 400);
 
 /* ---------- send flow ---------- */
 async function send(){
@@ -1932,4 +1941,4 @@ try{
 </script>
 
 </body>
-</html>
+                                    </html>
