@@ -1142,6 +1142,7 @@ function startListening(){
         return;
       }
       $("vTap").textContent = "MIC BLOCKED - ALLOW IN BROWSER";
+      if (window.__micMeter) window.__micMeter.stop();
       logEvent("Mic permission denied - check browser site settings");
       return;
     }
@@ -1156,8 +1157,9 @@ function startListening(){
 let manualStop = false;
 function toggleMic(){
   activated = true; store.set("activated", 1);
-  if (listening){ manualStop = true; heard = ""; heardInterim = ""; try{ rec.stop(); }catch(e){} return; }
+  if (listening){ manualStop = true; window.__micMeterWanted = false; if (window.__micMeter) window.__micMeter.stop(); heard = ""; heardInterim = ""; try{ rec.stop(); }catch(e){} return; }
   manualStop = false;
+  window.__micMeterWanted = true; if (window.__micMeter) window.__micMeter.start();
   startListening();
 }
 $("mic").addEventListener("click", toggleMic);
@@ -1169,6 +1171,7 @@ document.addEventListener("pointerdown", function arm(ev){
   const tgt = ev.target;
   if (tgt && tgt.closest && (tgt.closest("#mic") || tgt.closest("#mic2"))) return;
   activated = true; store.set("activated", 1);
+  window.__micMeterWanted = true; if (window.__micMeter) window.__micMeter.start();
   if (window.speechSynthesis){
     try{ const wu = new SpeechSynthesisUtterance(" "); wu.volume = 0; speechSynthesis.speak(wu); }catch(e){}
   }
@@ -1211,6 +1214,7 @@ document.addEventListener("visibilitychange", () => {
 let autoArming = false;
 if (store.get("activated") && settings.hf && SR){
   activated = true; autoArming = true;
+  window.__micMeterWanted = true;
   startListening();
   setTimeout(() => { autoArming = false; }, 15000);
   logEvent("Mic auto-armed from earlier visit");
@@ -1821,8 +1825,83 @@ try{
 
   const tempP = panel('hTemp', '<span>24H TEMPERATURE</span><i>OPEN-METEO</i>');
   const tempC = mk('canvas','hpcanvas','hTempCv'); tempP.appendChild(tempC); shell.appendChild(tempP);
-  const rainP = panel('hRain', '<span>PRECIP PROB 24H</span><i>%</i>');
-  const rainC = mk('canvas','hpcanvas','hRainCv'); rainP.appendChild(rainC); shell.appendChild(rainP);
+  const micLvP = panel('hMicLv', '<span>MIC LEVELS</span><i>LIVE</i>');
+  const micLvC = mk('canvas','hpcanvas','hMicCv'); micLvP.appendChild(micLvC); shell.appendChild(micLvP);
+
+  /* live mic input meter: animated bars from a getUserMedia analyser while the
+     mic is armed, MIC OFF / MIC BLOCKED idle states otherwise. ?micdemo=1 drives
+     synthetic bars for styling checks on devices without a mic. */
+  const micMeter = (() => {
+    const N = 24;
+    let ac = null, analyser = null, stream = null, raf = 0, running = false, demo = false;
+    let bars = new Array(N).fill(0);
+    const DEMO = /[?&]micdemo=1/.test(location.search);
+    function drawIdle(label){
+      const cv = document.getElementById('hMicCv'); if (!cv) return;
+      const W = cv.width = cv.offsetWidth * 2, H = cv.height = cv.offsetHeight * 2;
+      const x = cv.getContext('2d');
+      x.clearRect(0, 0, W, H);
+      const bw = W / N;
+      for (let i = 0; i < N; i++){ x.fillStyle = 'rgba(111,214,242,.12)'; x.fillRect(i * bw + 1, H - 3, bw - 2, 3); }
+      x.fillStyle = 'rgba(111,214,242,.4)'; x.font = '18px monospace'; x.textAlign = 'center';
+      x.fillText(label || 'MIC OFF', W / 2, H / 2);
+      x.textAlign = 'left';
+    }
+    function frame(){
+      const cv = document.getElementById('hMicCv');
+      if (!cv){ stop(); return; }
+      const W = cv.width = cv.offsetWidth * 2, H = cv.height = cv.offsetHeight * 2;
+      const x = cv.getContext('2d');
+      const vals = new Array(N).fill(0);
+      if (demo){
+        const t = performance.now() / 1000;
+        for (let i = 0; i < N; i++)
+          vals[i] = Math.max(0, Math.min(1, .45 + .4 * Math.sin(t * 3 + i * .7) * Math.sin(t * .9 + i) + .15 * Math.sin(t * 7 + i * 2)));
+      } else if (analyser){
+        const data = new Uint8Array(analyser.frequencyBinCount);
+        analyser.getByteFrequencyData(data);
+        const step = Math.max(1, Math.floor(data.length / N));
+        for (let i = 0; i < N; i++){
+          let s = 0; for (let j = 0; j < step; j++) s += data[i * step + j] || 0;
+          vals[i] = Math.min(1, (s / step) / 160);
+        }
+      }
+      for (let i = 0; i < N; i++) bars[i] = Math.max(vals[i], bars[i] * .82);
+      x.clearRect(0, 0, W, H);
+      const bw = W / N;
+      for (let i = 0; i < N; i++){
+        const h = Math.max(3, bars[i] * H);
+        x.fillStyle = 'rgba(111,214,242,' + (.3 + .6 * bars[i]) + ')';
+        x.fillRect(i * bw + 1, H - h, bw - 2, h);
+      }
+      raf = requestAnimationFrame(frame);
+    }
+    function start(){
+      if (running) return;
+      if (DEMO){ demo = true; running = true; frame(); return; }
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ drawIdle('NO MIC API'); return; }
+      navigator.mediaDevices.getUserMedia({ audio: true }).then(st => {
+        if (running){ st.getTracks().forEach(t => t.stop()); return; }
+        stream = st;
+        ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+        if (ac.resume) ac.resume();
+        const srcNode = ac.createMediaStreamSource(st);
+        analyser = ac.createAnalyser(); analyser.fftSize = 128; analyser.smoothingTimeConstant = .75;
+        srcNode.connect(analyser);
+        running = true; frame();
+      }).catch(() => { drawIdle('MIC BLOCKED'); });
+    }
+    function stop(){
+      running = false;
+      if (raf) cancelAnimationFrame(raf); raf = 0;
+      if (stream){ stream.getTracks().forEach(t => t.stop()); stream = null; }
+      analyser = null;
+      drawIdle('MIC OFF');
+    }
+    if (window.__micMeterWanted) start(); else drawIdle('MIC OFF');
+    return { start, stop };
+  })();
+  window.__micMeter = micMeter;
 
   const coreOv = panel('hCoreOv', '<span>AI CORE</span><i>REAL-TIME</i>');
   grab('AI CORE OVERVIEW').forEach(n => coreOv.appendChild(n)); shell.appendChild(coreOv);
@@ -1878,13 +1957,12 @@ try{
 
   /* weather graphs + extended readout (real Open-Meteo data) */
   const draw = () => {
-    fetch('https://api.open-meteo.com/v1/forecast?latitude=26.6587&longitude=-80.2414&hourly=temperature_2m,precipitation_probability&daily=sunrise,sunset&temperature_unit=fahrenheit&timezone=America%2FNew_York&forecast_days=2')
+    fetch('https://api.open-meteo.com/v1/forecast?latitude=26.6587&longitude=-80.2414&hourly=temperature_2m&daily=sunrise,sunset&temperature_unit=fahrenheit&timezone=America%2FNew_York&forecast_days=2')
       .then(r => r.json()).then(js => {
         const now = new Date(); const hr = now.getHours();
         const times = js.hourly.time; let start = 0;
         for (let i = 0; i < times.length; i++){ if (new Date(times[i]) <= now) start = i; }
         const tp = js.hourly.temperature_2m.slice(start, start + 24);
-        const pp = js.hourly.precipitation_probability.slice(start, start + 24);
         const cv = document.getElementById('hTempCv');
         if (cv && tp.length > 1){
           const W = cv.width = cv.offsetWidth * 2, H = cv.height = cv.offsetHeight * 2;
@@ -1897,16 +1975,6 @@ try{
           x2.strokeStyle = '#6fd6f2'; x2.lineWidth = 2.5; x2.stroke();
           x2.fillStyle = '#9be9ff'; x2.font = '20px monospace';
           x2.fillText(Math.round(lo) + 'F', 4, H - 6); x2.fillText(Math.round(hi) + 'F', 4, 20);
-        }
-        const rv = document.getElementById('hRainCv');
-        if (rv && pp.length){
-          const W = rv.width = rv.offsetWidth * 2, H = rv.height = rv.offsetHeight * 2;
-          const x2 = rv.getContext('2d');
-          const bw = W / pp.length;
-          pp.forEach((v, i) => {
-            x2.fillStyle = 'rgba(111,214,242,' + (0.25 + 0.55 * v / 100) + ')';
-            x2.fillRect(i * bw + 1, H - v / 100 * H, bw - 2, v / 100 * H);
-          });
         }
         const sr = new Date(js.daily.sunrise[0]), ss = new Date(js.daily.sunset[0]);
         const fmt = d => { let h = d.getHours(), m = ('0'+d.getMinutes()).slice(-2), ap = h >= 12 ? 'PM' : 'AM'; return ((h % 12) || 12) + ':' + m + ' ' + ap; };
@@ -1941,4 +2009,4 @@ try{
 </script>
 
 </body>
-                                    </html>
+</html>
