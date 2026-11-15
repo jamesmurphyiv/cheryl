@@ -246,7 +246,7 @@ main.minmain{max-width:680px;margin:0 auto;padding:14px 16px 26px;display:flex;f
     <div class="minheadR">
       <span class="syspill"><b id="sysState">OPTIMAL</b></span>
       <div class="clock"><div class="d" id="cDate">--</div><div class="t" id="cTime">--:--:--</div></div>
-      <button class="gearbtn" id="gearBtn" title="Settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.2 2.2M16.9 16.9l2.2 2.2M19.1 4.9l-2.2 2.2M7.1 16.9l-2.2 2.2"/></svg></button>
+      <button class="gearbtn" id="gearBtn" title="Settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
     </div>
   </div>
 
@@ -394,6 +394,10 @@ main.minmain{max-width:680px;margin:0 auto;padding:14px 16px 26px;display:flex;f
     const scene = new THREE.Scene();
     const cam = new THREE.PerspectiveCamera(42, 1, 0.01, 100);
     cam.position.set(0, 0.15, 3.4);
+    scene.add(new THREE.AmbientLight(0x88bbdd, 1.1));
+    const dl = new THREE.DirectionalLight(0xffffff, 1.4);
+    dl.position.set(1.5, 2, 3);
+    scene.add(dl);
 
     /* normalize model to radius 1, centered */
     const model = gltf.scene;
@@ -480,14 +484,18 @@ main.minmain{max-width:680px;margin:0 auto;padding:14px 16px 26px;display:flex;f
     tilt.rotation.z = THREE.MathUtils.degToRad(-23.5);
     const spin = new THREE.Group();
     spin.add(model);
+    spin.rotation.y = parseFloat(new URLSearchParams(location.search).get("a") || "0");
     tilt.add(spin);
     scene.add(tilt);
 
     /* 3 orbit rings: Gagarin, Glenn, Telstar inclinations; one clean circle marker orbiting each */
+    /* monument-matched: real orbit inclinations (Gagarin 64.95, Glenn 32.54, Telstar 44.8 deg),
+       equal radii 1.19R (the real rings: 450 ft circumference around the 120 ft globe),
+       node azimuths matched to reference photos of the monument */
     const RINGS = [
-      {inc: 64.95, r: 1.10, yaw: 20,  speed: 0.30},
-      {inc: 32.54, r: 1.18, yaw: -55, speed: 0.30},
-      {inc: 44.8,  r: 1.26, yaw: 110, speed: 0.17}
+      {inc: 64.95, r: 1.19, yaw: 114,  speed: 0.30},
+      {inc: 32.54, r: 1.19, yaw: -136, speed: 0.30},
+      {inc: 44.8,  r: 1.19, yaw: -156, speed: 0.17}
     ];
     const orbiters = [];
     RINGS.forEach(cfg => {
@@ -496,21 +504,16 @@ main.minmain{max-width:680px;margin:0 auto;padding:14px 16px 26px;display:flex;f
       const plane = new THREE.Group();
       plane.rotation.x = THREE.MathUtils.degToRad(cfg.inc);
       g.add(plane);
-      const pts = [];
-      for (let i = 0; i <= 128; i++){
-        const a = i / 128 * Math.PI * 2;
-        pts.push(new THREE.Vector3(Math.cos(a) * cfg.r, 0, Math.sin(a) * cfg.r));
-      }
-      const line = new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints(pts),
-        new THREE.LineBasicMaterial({color: 0x6fd6f2, transparent: true, opacity: 0.45})
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(cfg.r, 0.012, 10, 160),
+        new THREE.MeshBasicMaterial({color: 0x6fd6f2, transparent: true, opacity: 0.5})
       );
-      plane.add(line);
+      ring.rotation.x = Math.PI / 2;
+      plane.add(ring);
       const dot = new THREE.Mesh(
-        new THREE.CircleGeometry(0.026, 24),
-        new THREE.MeshBasicMaterial({color: 0x9fe8ff, side: THREE.DoubleSide})
+        new THREE.SphereGeometry(0.034, 20, 20),
+        new THREE.MeshPhongMaterial({color: 0x9fe8ff, emissive: 0x14384a, shininess: 70})
       );
-      dot.onBeforeRender = (renderer, scene, camera) => { dot.quaternion.copy(camera.quaternion); };
       plane.add(dot);
       spin.add(g); /* rings are bolted to the monument - they travel with the globe */
       orbiters.push({mesh: dot, cfg, a: Math.random() * Math.PI * 2});
@@ -529,7 +532,7 @@ main.minmain{max-width:680px;margin:0 auto;padding:14px 16px 26px;display:flex;f
       const dt = Math.min(0.05, (now - last) / 1000); last = now;
       const cls = panel ? panel.className : "";
       const speed = cls.indexOf("thinking") !== -1 ? 0.6 : cls.indexOf("speaking") !== -1 ? 0.3 : cls.indexOf("listening") !== -1 ? 0.2 : 0.12;
-      spin.rotation.y += speed * dt;
+      if (!new URLSearchParams(location.search).has("f")) spin.rotation.y += speed * dt;
       orbiters.forEach(s => {
         s.a += s.cfg.speed * dt;
         s.mesh.position.set(Math.cos(s.a) * s.cfg.r, 0, Math.sin(s.a) * s.cfg.r);
@@ -953,6 +956,7 @@ function addMsg(role, content, sources){
     div.appendChild(s);
   }
   thread.appendChild(div);
+  while (thread.children.length > 2) thread.removeChild(thread.firstChild);
   scrollBottom();
   return body;
 }
@@ -962,7 +966,7 @@ function renderAll(){
     addMsg("cheryl", GREETING);
     return;
   }
-  history.forEach(m => addMsg(m.role, m.content, m.sources));
+  history.slice(-2).forEach(m => addMsg(m.role, m.content, m.sources));
 }
 
 /* ---------- settings ---------- */
@@ -1560,5 +1564,302 @@ if ("serviceWorker" in navigator){
   navigator.serviceWorker.register("sw.js").catch(() => {});
 }
 </script>
+<style id="hudStyle">
+html,body{overflow:hidden!important;height:100dvh}
+*{scrollbar-width:none!important}
+*::-webkit-scrollbar{display:none!important}
+.shell.hud{display:grid!important;height:100dvh;padding:8px;gap:6px;
+  grid-template-columns:repeat(12,minmax(0,1fr));grid-template-rows:44px repeat(6,minmax(0,1fr)) 92px}
+main.minmain{display:none!important}
+.hp{border:1px solid #16303c;background:rgba(5,11,16,.72);padding:6px 8px;min-height:0;min-width:0;overflow:hidden;position:relative}
+.hp .pl{font-family:var(--hud);font-size:7px;letter-spacing:.22em;color:#4f7282;text-transform:uppercase;margin-bottom:4px;display:flex;justify-content:space-between}
+.hp .pl i{font-style:normal;color:#2f4b59}
+#hBadge{grid-area:1/4/2/10;display:flex;align-items:center;justify-content:center;gap:12px;text-align:center}
+#hBadge .os{font-family:var(--hud);font-size:13px;letter-spacing:.3em;color:#d9f4ff}
+#hBadge .usr{font-family:var(--hud);font-size:7px;letter-spacing:.24em;color:#4f7282;margin-top:2px}
+#hBadge .syspill{margin:0}
+#hSess{grid-area:1/1/4 span}
+#hSess{grid-column:1/4;grid-row:1}
+#hSess .row{display:flex;gap:14px;font-family:var(--hud);font-size:8px;letter-spacing:.12em;color:#7fa3b5;height:100%;align-items:center}
+#hSess .row b{color:#9be9ff;font-size:10px}
+#hClockR{grid-column:10/13;grid-row:1;display:flex;align-items:center;justify-content:flex-end;gap:12px}
+#hClockR .clock{text-align:right}
+#hClockR .clock .t{font-size:17px!important}
+#hCore{grid-column:4/10;grid-row:2/8;padding:0;border:1px solid #16303c}
+#hCore::before,#hCore::after{content:"";position:absolute;width:22px;height:22px;z-index:3;pointer-events:none}
+#hCore::before{left:-1px;top:-1px;border-left:2px solid #6fd6f2;border-top:2px solid #6fd6f2}
+#hCore::after{right:-1px;bottom:-1px;border-right:2px solid #6fd6f2;border-bottom:2px solid #6fd6f2}
+#hCore .coreviz{position:absolute;inset:0 0 30px;border:none;min-height:0}
+#hCore #globe,#hCore #globe3d{transform:scale(.62)}
+#hCore .minvoice{position:absolute;left:0;right:0;bottom:4px;z-index:4;display:flex;align-items:center;justify-content:center;gap:12px}
+#hTemp{grid-column:1/4;grid-row:2/4}
+#hRain{grid-column:1/4;grid-row:4/5}
+#hCoreOv{grid-column:1/4;grid-row:5/6}
+#hCoreOv .kv{padding:1px 0}
+#hCoreOv .kv b{font-size:8px}
+#hCoreOv .kv span{font-size:8px}
+#hGauges{grid-column:1/4;grid-row:6/7}
+#hGauges .gauges{display:flex;gap:6px;height:calc(100% - 16px)}
+#hGauges .gauge{flex:1;min-width:0}
+#hGauges .gauge svg{width:100%;height:auto;max-height:70%}
+#hMem{grid-column:1/4;grid-row:7/8}
+#hMem .mstats{display:flex;gap:10px}
+#hMem .mrow b{font-size:10px}
+#hMem .mrow span{font-size:6px}
+#hWx{grid-column:10/13;grid-row:2/5;text-align:left}
+#hWx .big{font-family:var(--hud);font-size:30px;letter-spacing:.12em;color:#d9f4ff;line-height:1.1}
+#hWx .cond{font-family:var(--hud);font-size:10px;letter-spacing:.2em;color:#9be9ff;margin:2px 0 8px}
+#hWx .wr{font-family:var(--hud);font-size:8px;letter-spacing:.1em;color:#7fa3b5;line-height:2;white-space:nowrap}
+#hWx .wr b{color:#cfe9f5}
+#hLlm{grid-column:10/13;grid-row:5/6}
+#hLlm .llm{display:flex;gap:8px;flex-wrap:wrap}
+#hLlm .prov{flex:1;min-width:60px}
+#hLlm .prov b{font-size:7px;display:block}
+#hLlm .prov span{font-size:7px}
+#hMods{grid-column:10/13;grid-row:6/7}
+#hMods .modgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
+#hMods .mod{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:4px 6px;border:1px solid #16303c}
+#hMods .mod b{font-size:6.5px;letter-spacing:.06em}
+#hMods .mod span,#hMods .mod .bars{display:none}
+#hMods .mod .ico{margin:0;transform:scale(.8);transform-origin:left}
+#hQc{grid-column:10/13;grid-row:7/8}
+#hQc .qcmd{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+#hQc .qcmd button{font-size:7px;padding:5px 4px}
+#hQc .qcmd button svg{display:none}
+#hBot{grid-column:1/13;grid-row:8/9;display:flex;gap:6px;padding:0;border:none;background:none;overflow:visible}
+#hTitle{border:1px solid #16303c;background:rgba(5,11,16,.72);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4px 18px;min-width:200px}
+#hTitle .big{font-family:var(--hud);font-size:24px;letter-spacing:.3em;color:#9be9ff;text-shadow:0 0 16px rgba(111,214,242,.45);padding-left:.3em;white-space:nowrap}
+#hTitle .minfoot{font-size:6px;text-align:center;line-height:1.5;margin-top:3px}
+#hBot .chatpanel{flex:1;min-height:0;height:100%;min-width:0;grid-column:auto}
+#hBot #thread{max-height:none;height:calc(100% - 22px);overflow-y:auto;overflow-x:hidden}
+#hBot .talkbar{width:300px;margin-top:0;display:flex}
+#hBot .talkpill{flex:1}
+#dialSvg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2}
+@keyframes dialSpin{to{transform:rotate(360deg)}}
+#dialSvg .rot{transform-origin:500px 500px;animation:dialSpin 110s linear infinite}
+#dialSvg .rot2{transform-origin:500px 500px;animation:dialSpin 160s linear infinite reverse}
+.hpcanvas{position:absolute;left:8px;right:8px;bottom:6px;top:20px;width:calc(100% - 16px);height:calc(100% - 26px)}
+@media (max-width:860px){
+  .shell.hud{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto;position:relative}
+  #hBadge .brand svg{width:18px;height:18px}
+  #hBadge .os{font-size:10px;letter-spacing:.2em}
+  #hBadge .usr{font-size:6px}
+  #hCore{max-height:52vh}
+  #hBot{height:auto;flex-direction:column}
+  #hBot .chatpanel{height:88px;width:100%}
+  #hBot .talkbar{width:100%}
+  #hBot .talkpill textarea{display:block}
+  #hSess,#hClockR,#hTemp,#hRain,#hCoreOv,#hGauges,#hMem,#hLlm,#hMods,#hQc{display:none}
+  #hBadge{grid-area:1/1/2/2}
+  #hCore{grid-area:2/1/3/2}
+  #hBot{grid-area:3/1/4/2}
+  #hTitle{display:none}
+  #hWx{position:absolute;right:6px;top:6px;z-index:5;background:rgba(5,11,16,.6);padding:5px 7px;grid-column:auto;grid-row:auto;border:1px solid #16303c}
+  #hWx .big{font-size:14px}
+  #hWx .cond{font-size:7px;margin:0}
+  #hWx .wr{display:none}
+  .hudB #thread *{overflow-wrap:anywhere}
+}
+</style>
+<script>
+try{
+(function(){
+  const shell = document.querySelector('.shell');
+  if(!shell || shell.classList.contains('hud')) return;
+  shell.classList.add('hud');
+  const main = shell.querySelector('main.minmain');
+  const parked = main.querySelector('#parked');
+  const mk = (tag, cls, id) => { const e = document.createElement(tag); if(cls) e.className = cls; if(id) e.id = id; return e; };
+  const panel = (id, label, tag) => { const p = mk(tag||'section','hp',id); if(label){ const l = mk('div','pl'); l.innerHTML = label; p.appendChild(l); } return p; };
+
+  const badge = panel('hBadge', null, 'header');
+  const osWrap = mk('div');
+  osWrap.innerHTML = '<div class="os">CHERYL&nbsp;OS</div><div class="usr">USER: JAMES MURPHY</div>';
+  const minhead = main.querySelector('.minhead');
+  const pill = minhead.querySelector('.syspill');
+  const gear = minhead.querySelector('#gearBtn');
+  badge.appendChild(minhead.querySelector('.brand'));
+  badge.appendChild(osWrap);
+  badge.appendChild(pill);
+  badge.appendChild(gear);
+  shell.appendChild(badge);
+
+  const sess = panel('hSess', null);
+  const sessRow = mk('div','row');
+  const chatCount = parked.querySelector('#chatCount');
+  sessRow.innerHTML = '<span>SESSION<br><b id="hUp">00:00</b></span><span>EXCHANGES<br><b id="hEx">0</b></span><span>MODEL<br><b>GPT-OSS-20B</b></span>';
+  sess.appendChild(sessRow);
+  shell.appendChild(sess);
+
+  const clockR = panel('hClockR', null);
+  clockR.appendChild(minhead.querySelector('.clock'));
+  shell.appendChild(clockR);
+
+  const core = mk('section','hp','hCore');
+  core.appendChild(main.querySelector('#corePanel'));
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS,'svg');
+  svg.setAttribute('viewBox','0 0 1000 1000'); svg.id = 'dialSvg';
+  let inner = '';
+  for (let i = 0; i < 180; i++){
+    const a = i * 2 * Math.PI / 180, long = i % 15 === 0, mid = i % 5 === 0;
+    const r1 = long ? 448 : (mid ? 462 : 470), r2 = 486;
+    inner += '<line x1="' + (500 + Math.cos(a)*r1).toFixed(1) + '" y1="' + (500 + Math.sin(a)*r1).toFixed(1) +
+             '" x2="' + (500 + Math.cos(a)*r2).toFixed(1) + '" y2="' + (500 + Math.sin(a)*r2).toFixed(1) +
+             '" stroke="#6fd6f2" stroke-width="' + (long ? 3.4 : 1.2) + '" opacity="' + (long ? .6 : (mid ? .4 : .22)) + '"/>';
+  }
+  inner += '<circle cx="500" cy="500" r="492" fill="none" stroke="#6fd6f2" stroke-width="1" opacity=".25"/>';
+  inner += '<circle cx="500" cy="500" r="356" fill="none" stroke="#6fd6f2" stroke-width="1" opacity=".2"/>';
+  let seg = '';
+  for (let i = 0; i < 48; i++){
+    const a0 = i * 7.5 + 1.2, a1 = i * 7.5 + 6.3, s = a0*Math.PI/180, e = a1*Math.PI/180;
+    const on = i % 4 !== 3;
+    seg += '<path d="M ' + (500+Math.cos(s)*424).toFixed(1) + ' ' + (500+Math.sin(s)*424).toFixed(1) +
+      ' A 424 424 0 0 1 ' + (500+Math.cos(e)*424).toFixed(1) + ' ' + (500+Math.sin(e)*424).toFixed(1) +
+      '" fill="none" stroke="#8fe4ff" stroke-width="14" opacity="' + (on ? .34 : .08) + '"/>';
+  }
+  inner += '<g class="rot">' + seg + '</g>';
+  const arc2 = (r, a0, a1, w, op) => {
+    const s = a0*Math.PI/180, e = a1*Math.PI/180;
+    return '<path d="M ' + (500+Math.cos(s)*r).toFixed(1) + ' ' + (500+Math.sin(s)*r).toFixed(1) +
+      ' A ' + r + ' ' + r + ' 0 0 1 ' + (500+Math.cos(e)*r).toFixed(1) + ' ' + (500+Math.sin(e)*r).toFixed(1) +
+      '" fill="none" stroke="#8fe4ff" stroke-width="' + w + '" opacity="' + op + '" stroke-linecap="round"/>';
+  };
+  inner += '<g class="rot2">' + arc2(388, 10, 70, 4, .5) + arc2(388, 100, 150, 4, .35) + arc2(388, 190, 265, 4, .5) + arc2(388, 280, 330, 4, .35) + '</g>';
+  inner += '<text x="500" y="34" fill="#4f7282" font-size="16" letter-spacing="6" text-anchor="middle" font-family="monospace">CHX-CORE</text>';
+  svg.innerHTML = inner;
+  core.appendChild(svg);
+  core.appendChild(main.querySelector('.minvoice'));
+  shell.appendChild(core);
+
+  const grab = (txt) => {
+    const pt = [...parked.querySelectorAll('.ptitle')].find(p => p.textContent.includes(txt));
+    if (!pt) return [];
+    const out = []; let n = pt.nextElementSibling;
+    while (n && !n.classList.contains('ptitle') && n.tagName !== 'SECTION'){ out.push(n); n = n.nextElementSibling; }
+    return out;
+  };
+
+  const tempP = panel('hTemp', '<span>24H TEMPERATURE</span><i>OPEN-METEO</i>');
+  const tempC = mk('canvas','hpcanvas','hTempCv'); tempP.appendChild(tempC); shell.appendChild(tempP);
+  const rainP = panel('hRain', '<span>PRECIP PROB 24H</span><i>%</i>');
+  const rainC = mk('canvas','hpcanvas','hRainCv'); rainP.appendChild(rainC); shell.appendChild(rainP);
+
+  const coreOv = panel('hCoreOv', '<span>AI CORE</span><i>REAL-TIME</i>');
+  grab('AI CORE OVERVIEW').forEach(n => coreOv.appendChild(n)); shell.appendChild(coreOv);
+  const gauges = panel('hGauges', '<span>SYSTEM MONITOR</span>');
+  grab('SYSTEM MONITOR').forEach(n => gauges.appendChild(n)); shell.appendChild(gauges);
+  const mem = panel('hMem', '<span>MEMORY</span>');
+  grab('MEMORY INSIGHTS').forEach(n => mem.appendChild(n)); shell.appendChild(mem);
+
+  const wx = panel('hWx', '<span>WEATHER</span><i>WELLINGTON FL</i>');
+  const minwx = document.querySelector('.minwx');
+  minwx.style.display = 'none';
+  const wxBig = mk('div'); wxBig.innerHTML = '<div class="big" id="hWxT">--</div><div class="cond" id="hWxC">--</div>' +
+    '<div class="wr">FEELS <b id="hWxF">--</b></div><div class="wr">WIND <b id="hWxW">--</b></div>' +
+    '<div class="wr">HUMIDITY <b id="hWxH">--</b> - RAIN <b id="hWxR">--</b></div>' +
+    '<div class="wr">HI <b id="hWxHi">--</b> / LO <b id="hWxLo">--</b></div>' +
+    '<div class="wr">SUNRISE <b id="hWxSr">--</b> - SUNSET <b id="hWxSs">--</b></div>' +
+    '<div class="wr" id="hWxU" style="color:#3d5563">--</div>';
+  wx.appendChild(wxBig); shell.appendChild(wx);
+  wx.appendChild(minwx);
+  const mq2 = window.matchMedia('(max-width: 860px)');
+  const placeWx2 = () => { (mq2.matches ? core : shell).appendChild(wx); };
+  placeWx2(); mq2.addEventListener('change', placeWx2);
+
+  const llm = panel('hLlm', '<span>LLM STATUS</span><i>1 CONNECTED</i>');
+  grab('LLM STATUS').forEach(n => llm.appendChild(n)); shell.appendChild(llm);
+  const mods = panel('hMods', '<span>MODULES</span>');
+  const modsGrid = mk('div','modgrid');
+  const modsSec = parked.querySelector('section.mods');
+  if (modsSec) [...modsSec.querySelectorAll('.mod')].forEach(m => modsGrid.appendChild(m));
+  mods.appendChild(modsGrid); shell.appendChild(mods);
+  const qc = panel('hQc', '<span>QUICK COMMANDS</span>');
+  grab('QUICK COMMANDS').forEach(n => qc.appendChild(n)); shell.appendChild(qc);
+
+  const bot = mk('footer','hp','hBot');
+  const title = mk('div','', 'hTitle');
+  title.innerHTML = '<div class="big">CHERYLX</div>';
+  title.appendChild(main.querySelector('.minfoot'));
+  bot.appendChild(title);
+  bot.appendChild(main.querySelector('.chatpanel'));
+  bot.appendChild(main.querySelector('.talkbar'));
+  shell.appendChild(bot);
+
+  /* session uptime + exchanges */
+  const t0 = Date.now();
+  setInterval(() => {
+    const s = Math.floor((Date.now() - t0) / 1000);
+    const el = document.getElementById('hUp');
+    if (el) el.textContent = ('0'+Math.floor(s/60)).slice(-2) + ':' + ('0'+(s%60)).slice(-2);
+    const cc = document.getElementById('chatCount');
+    const ex = document.getElementById('hEx');
+    if (cc && ex) ex.textContent = (cc.textContent.match(/\d+/) || ['0'])[0];
+  }, 1000);
+
+  /* weather graphs + extended readout (real Open-Meteo data) */
+  const draw = () => {
+    fetch('https://api.open-meteo.com/v1/forecast?latitude=26.6587&longitude=-80.2414&hourly=temperature_2m,precipitation_probability&daily=sunrise,sunset&temperature_unit=fahrenheit&timezone=America%2FNew_York&forecast_days=2')
+      .then(r => r.json()).then(js => {
+        const now = new Date(); const hr = now.getHours();
+        const times = js.hourly.time; let start = 0;
+        for (let i = 0; i < times.length; i++){ if (new Date(times[i]) <= now) start = i; }
+        const tp = js.hourly.temperature_2m.slice(start, start + 24);
+        const pp = js.hourly.precipitation_probability.slice(start, start + 24);
+        const cv = document.getElementById('hTempCv');
+        if (cv && tp.length > 1){
+          const W = cv.width = cv.offsetWidth * 2, H = cv.height = cv.offsetHeight * 2;
+          const x2 = cv.getContext('2d');
+          const lo = Math.min.apply(null, tp), hi = Math.max.apply(null, tp);
+          x2.strokeStyle = 'rgba(111,214,242,.25)'; x2.lineWidth = 1;
+          for (let g = 0; g < 4; g++){ const y = H * g / 3; x2.beginPath(); x2.moveTo(0, y); x2.lineTo(W, y); x2.stroke(); }
+          x2.beginPath();
+          tp.forEach((v, i) => { const x = i / (tp.length - 1) * W, y = H - (v - lo) / Math.max(1, hi - lo) * (H * .8) - H * .1; i ? x2.lineTo(x, y) : x2.moveTo(x, y); });
+          x2.strokeStyle = '#6fd6f2'; x2.lineWidth = 2.5; x2.stroke();
+          x2.fillStyle = '#9be9ff'; x2.font = '20px monospace';
+          x2.fillText(Math.round(lo) + 'F', 4, H - 6); x2.fillText(Math.round(hi) + 'F', 4, 20);
+        }
+        const rv = document.getElementById('hRainCv');
+        if (rv && pp.length){
+          const W = rv.width = rv.offsetWidth * 2, H = rv.height = rv.offsetHeight * 2;
+          const x2 = rv.getContext('2d');
+          const bw = W / pp.length;
+          pp.forEach((v, i) => {
+            x2.fillStyle = 'rgba(111,214,242,' + (0.25 + 0.55 * v / 100) + ')';
+            x2.fillRect(i * bw + 1, H - v / 100 * H, bw - 2, v / 100 * H);
+          });
+        }
+        const sr = new Date(js.daily.sunrise[0]), ss = new Date(js.daily.sunset[0]);
+        const fmt = d => { let h = d.getHours(), m = ('0'+d.getMinutes()).slice(-2), ap = h >= 12 ? 'PM' : 'AM'; return ((h % 12) || 12) + ':' + m + ' ' + ap; };
+        const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+        set('hWxSr', fmt(sr)); set('hWxSs', fmt(ss));
+      }).catch(() => {});
+  };
+  draw(); setInterval(draw, 20 * 60 * 1000);
+
+  /* mirror the app's live weather text into the HUD readout */
+  setInterval(() => {
+    const wMain = document.getElementById('wxMain'), wSub = document.getElementById('wxSub');
+    if (!wMain || !wSub || !wSub.textContent) return;
+    const set = (id, v) => { const e = document.getElementById(id); if (e && v) e.textContent = v; };
+    const m = wMain.textContent.match(/(\d+)F\s+(.*)/);
+    if (m){ set('hWxT', m[1] + 'F'); set('hWxC', m[2]); }
+    const lines = wSub.innerHTML.split(/<br\s*\/?>/i).map(s => s.replace(/<[^>]+>/g, ''));
+    const flat = lines.join(' ~ ');
+    const g = (re) => { const x = flat.match(re); return x ? x[1] : null; };
+    set('hWxF', g(/FEELS (\d+F)/)); set('hWxW', g(/WIND (\d+ MPH [A-Z]+)/));
+    set('hWxH', g(/HUMIDITY (\d+%)/)); set('hWxR', g(/RAIN (\d+%)/));
+    set('hWxHi', g(/HI (\d+F)/)); set('hWxLo', g(/LO (\d+F)/));
+    set('hWxU', (wSub.textContent.match(/(\d+:\d+ [AP]M - OPEN-METEO)/) || [])[1] || '');
+  }, 2000);
+})();
+}catch(err){
+  const d = document.createElement('div');
+  d.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:999;color:#ff7b7b;font:10px monospace;background:#000;padding:6px;max-width:90vw';
+  d.textContent = 'HUDERR: ' + err.message + ' @ ' + (err.stack||'').split('\n')[1];
+  document.body.appendChild(d);
+}
+</script>
+
 </body>
-        </html>
+                                                                                         </html>
