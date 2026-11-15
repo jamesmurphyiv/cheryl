@@ -373,7 +373,7 @@ main.minmain{max-width:680px;margin:0 auto;padding:14px 16px 26px;display:flex;f
 <script type="module">
 /* Real Unisphere GLB: 23.5 deg axis tilt like the monument, 3 orbit rings at the inclinations
    of the missions the monument's rings represent (Gagarin 64.95, Glenn 32.54, Telstar 44.8 deg),
-   one satellite marker orbiting each ring. Canvas globe stays as fallback. */
+   Canvas globe stays as fallback. */
 (async () => {
   const holder = document.getElementById("globe3d");
   const fallbackCanvas = document.getElementById("globe");
@@ -420,13 +420,12 @@ main.minmain{max-width:680px;margin:0 auto;padding:14px 16px 26px;display:flex;f
     tilt.add(spin);
     scene.add(tilt);
 
-    /* 3 orbit rings + satellites: Gagarin, Glenn, Telstar inclinations */
+    /* 3 orbit rings: Gagarin, Glenn, Telstar inclinations */
     const RINGS = [
-      {inc: 64.95, r: 1.28, yaw: 20,  speed: 0.30, sat: 0x9fe8ff},
-      {inc: 32.54, r: 1.42, yaw: -55, speed: 0.30, sat: 0x9fe8ff},
-      {inc: 44.8,  r: 1.56, yaw: 110, speed: 0.17, sat: 0x9fe8ff}
+      {inc: 64.95, r: 1.28, yaw: 20},
+      {inc: 32.54, r: 1.42, yaw: -55},
+      {inc: 44.8,  r: 1.56, yaw: 110}
     ];
-    const sats = [];
     RINGS.forEach(cfg => {
       const g = new THREE.Group();
       g.rotation.y = THREE.MathUtils.degToRad(cfg.yaw);
@@ -443,18 +442,7 @@ main.minmain{max-width:680px;margin:0 auto;padding:14px 16px 26px;display:flex;f
         new THREE.LineBasicMaterial({color: 0x6fd6f2, transparent: true, opacity: 0.45})
       );
       plane.add(line);
-      const sat = new THREE.Mesh(
-        new THREE.OctahedronGeometry(0.028),
-        new THREE.MeshBasicMaterial({color: cfg.sat})
-      );
-      const halo = new THREE.Mesh(
-        new THREE.SphereGeometry(0.05, 8, 8),
-        new THREE.MeshBasicMaterial({color: cfg.sat, transparent: true, opacity: 0.25})
-      );
-      sat.add(halo);
-      plane.add(sat);
       tilt.add(g);
-      sats.push({mesh: sat, cfg, a: Math.random() * Math.PI * 2});
     });
 
     function resize(){
@@ -471,11 +459,6 @@ main.minmain{max-width:680px;margin:0 auto;padding:14px 16px 26px;display:flex;f
       const cls = panel ? panel.className : "";
       const speed = cls.indexOf("thinking") !== -1 ? 0.6 : cls.indexOf("speaking") !== -1 ? 0.3 : cls.indexOf("listening") !== -1 ? 0.2 : 0.12;
       spin.rotation.y += speed * dt;
-      sats.forEach(s => {
-        s.a += s.cfg.speed * dt;
-        s.mesh.position.set(Math.cos(s.a) * s.cfg.r, 0, Math.sin(s.a) * s.cfg.r);
-        s.mesh.rotation.y += dt * 2;
-      });
       renderer.render(scene, cam);
       requestAnimationFrame(frame);
     }
@@ -1472,4 +1455,4 @@ if ("serviceWorker" in navigator){
 }
 </script>
 </body>
-  </html>
+</html>
