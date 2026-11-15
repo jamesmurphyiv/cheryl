@@ -231,11 +231,16 @@
     </div>
     <button class="chipbtn" id="tHands">Hands-free: off</button>
     <button class="chipbtn" id="tVTest" style="margin-top:6px">Test voice</button>
+    <h3 style="margin-top:16px">Faster brain - optional</h3>
+    <input id="groqKey" type="password" placeholder="Paste free Groq key" autocomplete="off" style="width:100%;background:#0a0e12;border:1px solid #22303a;color:#7fd6f2;font-family:var(--hud);font-size:10px;letter-spacing:.05em;padding:8px;border-radius:6px;margin-top:4px">
+    <button class="chipbtn" id="tKeySave" style="margin-top:6px">Save key - this device only</button>
+    <button class="chipbtn" id="tKeyClear" style="margin-top:4px">Clear key</button>
+    <div class="tap" id="keyStat" style="margin-top:6px">BRAIN: GPT-OSS-20B - POLLINATIONS</div>
     <h3 style="margin-top:16px">Weather - Wellington FL</h3>
     <div id="wxMain" style="font-family:var(--hud);font-size:24px;color:var(--cy2);letter-spacing:.06em;text-shadow:0 0 14px rgba(111,214,242,.5)">--</div>
     <div id="wxSub" style="font-family:var(--hud);font-size:9px;color:var(--dim);margin-top:6px;line-height:1.9;letter-spacing:.05em">OPEN-METEO - LOADING</div>
   </div>
-  <div class="sidefoot">LOCATION &nbsp;SOUTH FLORIDA<br>NETWORK &nbsp;<span class="ok">ONLINE - FREE TIER</span><br>BUILD &nbsp;CHERYL-OS 0.4</div>
+  <div class="sidefoot">LOCATION &nbsp;SOUTH FLORIDA<br>NETWORK &nbsp;<span class="ok">ONLINE - FREE TIER</span><br>BUILD &nbsp;CHERYL-OS 0.5</div>
 </aside>
 <main>
   <div class="topbar">
@@ -246,7 +251,7 @@
   <div class="deck">
     <section class="panel coreviz" id="corePanel">
       <canvas id="globe" style="position:absolute;inset:0;width:100%;height:100%"></canvas>
-      <div class="coretitle"><h1>CHERYL</h1><div class="sub">AI CORE</div><div class="ver">V0.2 // GPT-OSS-20B // FREE TIER</div></div>
+      <div class="coretitle"><h1>CHERYL</h1><div class="sub">AI CORE</div><div class="ver" id="coreVer">V0.2 // GPT-OSS-20B // FREE TIER</div></div>
     </section>
     <section class="panel">
       <div class="ptitle">AI CORE OVERVIEW<span class="tag">REAL-TIME</span></div>
@@ -265,7 +270,7 @@
       <div class="mod" id="mSearch"><div class="ico"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="16" y1="16" x2="21" y2="21"/></svg></div><div><b>Web Search</b><span>Wikipedia + DuckDuckGo</span></div><div class="bars"><i></i><i></i><i></i><i></i><i></i></div></div>
       <div class="mod" id="mVoice"><div class="ico"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/></svg></div><div><b>Voice I/O</b><span>Device speech engine</span></div><div class="bars"><i></i><i></i><i></i><i></i><i></i></div></div>
       <div class="mod" id="mMemory"><div class="ico"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/></svg></div><div><b>Memory</b><span id="mMemSub">-</span></div><div class="bars"><i></i><i></i><i></i><i></i><i></i></div></div>
-      <div class="mod live"><div class="ico"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/></svg></div><div><b>Language Core</b><span>GPT-OSS-20B</span></div><div class="bars"><i></i><i></i><i></i><i></i><i></i></div></div>
+      <div class="mod live"><div class="ico"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/></svg></div><div><b>Language Core</b><span id="mCoreSub">GPT-OSS-20B</span></div><div class="bars"><i></i><i></i><i></i><i></i><i></i></div></div>
       <div class="mod" id="mHands"><div class="ico"><svg viewBox="0 0 24 24"><path d="M3 12h4l2-6 4 12 2-6h6"/></svg></div><div><b>Hands-free</b><span>Auto re-listen loop</span></div><div class="bars"><i></i><i></i><i></i><i></i><i></i></div></div>
       <div class="mod live"><div class="ico"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-9-9"/><path d="M21 3l-9 9"/></svg></div><div><b>Offline Shell</b><span>Service worker</span></div><div class="bars"><i></i><i></i><i></i><i></i><i></i></div></div>
     </section>
@@ -319,7 +324,7 @@
       <button type="button" class="iconbtn" id="mic2" title="Talk to Cheryl"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="21"/></svg></button>
       <button type="submit" class="iconbtn" id="send" title="Send"><svg viewBox="0 0 24 24"><line x1="4" y1="12" x2="20" y2="12"/><polyline points="13 5 20 12 13 19"/></svg></button>
     </div>
-    <div class="tb-meta">CORE&nbsp;&nbsp;<span class="on">LISTENING</span><br>MODEL&nbsp;&nbsp;GPT-OSS-20B</div>
+    <div class="tb-meta">CORE&nbsp;&nbsp;<span class="on">LISTENING</span><br>MODEL&nbsp;&nbsp;<span id="tbModel">GPT-OSS-20B</span></div>
   </form>
 </main>
 </div>
@@ -621,7 +626,7 @@ const DEFAULT_MEMORY = [
 
 const SYSTEM = [
 "You are CHERYL (Cognitive Hub for Executive Research, Yielding Leverage), the personal everyday assistant of James Murphy. You are a working prototype built for him by Instinct. You run on a free open model: no tokens, no bill, no usage limits.",
-"Personality: sharp, warm, a little playful, never sycophantic. Talk like a trusted chief of staff, not a corporate bot.",
+"Personality: calm, quick, dry-witted and completely loyal, like a first-rate aide who has seen everything and is rattled by nothing. You call him boss. Never gush, never use exclamation marks, and a short dry remark is welcome when it earns its place. Every line must be your own.",
 "James talks to you out loud and you answer out loud. Keep answers to one to three short sentences unless he asks for detail. Plain text only: no emojis, no em dashes, no markdown, and never read out URLs, code, or long lists.",
 "You are a general everyday assistant: questions, weather, time, quick facts, chat, planning, advice. He makes films for a living; talk film only when he brings it up.",
 "When a block of web results is included in the conversation, read every result first and answer strictly from them, naming the source inline, like (Wikipedia). A Wikipedia match line that states the answer beats your own memory, always. If the results do not contain the answer, say the search did not turn it up, and only then answer from general knowledge, flagged as unverified. Never present a guess as fact.",
@@ -642,6 +647,7 @@ const store = {
   set(k, v){ try{ localStorage.setItem("cheryl_"+k, JSON.stringify(v)); }catch(e){} }
 };
 let history = store.get("history", []);
+let groqKey = store.get("groqKey", "");
 let settings = store.get("settings", {search:false, speak:true, hf:true});
 if (!store.get("v12m")){ settings.speak = true; settings.hf = true; store.set("v12m", 1); store.set("settings", settings); }
 let memory = store.get("memory", DEFAULT_MEMORY);
@@ -929,6 +935,25 @@ $("tVTest").addEventListener("click", () => {
   logEvent("Voice self-test");
   speak("Voice check. Cheryl can hear you and answers out loud.", true);
 });
+function paintModel(){
+  const short = groqKey ? "GPT-OSS-120B" : "GPT-OSS-20B";
+  const src = groqKey ? "GROQ FREE KEY - THIS DEVICE" : "POLLINATIONS - NO KEY";
+  const e1 = $("mCoreSub"); if (e1) e1.textContent = short;
+  const e2 = $("tbModel"); if (e2) e2.textContent = short;
+  const e3 = $("keyStat"); if (e3) e3.textContent = "BRAIN: " + short + " - " + src;
+  const e4 = $("coreVer"); if (e4) e4.textContent = "V0.2 // " + short + " // FREE TIER";
+}
+$("tKeySave").addEventListener("click", () => {
+  const v = $("groqKey").value.trim();
+  if (!v) return;
+  groqKey = v; store.set("groqKey", v); brainName = PROVIDERS[0].name;
+  $("groqKey").value = ""; paintModel();
+  logEvent("Faster brain engaged - Groq key saved on this device", true);
+});
+$("tKeyClear").addEventListener("click", () => {
+  groqKey = ""; store.set("groqKey", ""); brainName = PROVIDERS[1].name;
+  paintModel(); logEvent("Groq key cleared - back to the no-key free model");
+});
 
 let resumeKick = null;
 let speechQueue = [], speechActive = false;
@@ -1049,15 +1074,22 @@ function buildMessages(webCtx){
   }
   return msgs;
 }
-async function askCheryl(onToken){
-  const base = {messages: buildMessages(window._webCtx || null), model: "openai", reasoning_effort: "low"};
-  const HEAD = {"Content-Type":"application/json"};
+const PROVIDERS = [
+  {name: "Groq GPT-OSS-120B", url: "https://api.groq.com/openai/v1/chat/completions", model: "openai/gpt-oss-120b", needsKey: true},
+  {name: "Pollinations GPT-OSS-20B", url: "https://text.pollinations.ai/openai", model: "openai", needsKey: false}
+];
+let brainName = groqKey ? PROVIDERS[0].name : PROVIDERS[1].name;
+async function askProvider(p, onToken){
+  const body = {messages: buildMessages(window._webCtx || null), model: p.model, reasoning_effort: "low"};
+  const HEAD = {"Content-Type": "application/json"};
+  if (p.needsKey) HEAD["Authorization"] = "Bearer " + groqKey;
   const ctl = new AbortController();
   let gotFirst = false, partialText = "";
   const wd = setTimeout(() => { if(!gotFirst) ctl.abort(); }, 25000);
   try{
-    const res = await fetch(API, {method:"POST", headers:HEAD, body: JSON.stringify(Object.assign({}, base, {stream:true})), signal: ctl.signal});
-    if (res.status === 429){ clearTimeout(wd); return {error:"Rate limited for a moment (free tier). Give it ten seconds and send again."}; }
+    const res = await fetch(p.url, {method: "POST", headers: HEAD, body: JSON.stringify(Object.assign({}, body, {stream: true})), signal: ctl.signal});
+    if (res.status === 401 || res.status === 403){ clearTimeout(wd); return {badKey: true}; }
+    if (res.status === 429){ clearTimeout(wd); return {error: "The free tier is at its limit for a moment. Give it a few seconds and send again."}; }
     if (res.ok && res.body){
       const reader = res.body.getReader();
       const dec = new TextDecoder();
@@ -1067,7 +1099,7 @@ async function askCheryl(onToken){
         const {done, value} = await readOnce();
         if (done) break;
         gotFirst = true;
-        buf += dec.decode(value, {stream:true});
+        buf += dec.decode(value, {stream: true});
         let idx;
         while((idx = buf.indexOf("\n")) >= 0){
           const line = buf.slice(0, idx).trim(); buf = buf.slice(idx + 1);
@@ -1091,15 +1123,30 @@ async function askCheryl(onToken){
     return {text: partialText};
   }
   try{
-    const r2 = await fetch(API, {method:"POST", headers:HEAD, body: JSON.stringify(base), signal: AbortSignal.timeout(60000)});
-    if (r2.status === 429) return {error:"Rate limited for a moment (free tier). Give it ten seconds and send again."};
+    const r2 = await fetch(p.url, {method: "POST", headers: HEAD, body: JSON.stringify(body), signal: AbortSignal.timeout(60000)});
     if (r2.ok){
       const j = await r2.json();
       const t = j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
-      if (t){ onToken(t); return {text:t}; }
+      if (t){ onToken(t); return {text: t}; }
     }
   }catch(e){}
-  return {error:"The free model is busy right now. Give it a few seconds and send again."};
+  return null;
+}
+async function askCheryl(onToken){
+  const order = [];
+  if (groqKey) order.push(PROVIDERS[0]);
+  order.push(PROVIDERS[1]);
+  let lastErr = null;
+  for (const p of order){
+    const r = await askProvider(p, onToken);
+    if (r && r.text){
+      if (brainName !== p.name){ brainName = p.name; paintModel(); }
+      return r;
+    }
+    if (r && r.badKey){ logEvent("Groq key rejected by the API - check it in the side panel"); continue; }
+    if (r && r.error){ lastErr = r.error; continue; }
+  }
+  return {error: lastErr || "The free models are busy right now. Give it a few seconds and send again."};
 }
 
 /* ---------- weather (Open-Meteo, free, no key) ---------- */
@@ -1201,6 +1248,7 @@ async function send(){
   let spokenUpTo = 0, spokeOk = false;
   const pushSpeech = (full) => {
     if (!settings.speak) return;
+    if (full.length < spokenUpTo) spokenUpTo = 0;
     const re = /[.!?](?=\s|$)/g; re.lastIndex = spokenUpTo;
     let m;
     while ((m = re.exec(full)) !== null){
@@ -1263,6 +1311,7 @@ paintSettings();
 if (settings.hf && SR){
   try{ startListening(); logEvent("Auto-armed listening on load"); }catch(e){}
 }
+paintModel();
 paintStats();
 renderAll();
 logEvent("Cheryl-OS 0.2 online - core ready", true);
@@ -1271,4 +1320,4 @@ if ("serviceWorker" in navigator){
 }
 </script>
 </body>
-</html>
+  </html>
