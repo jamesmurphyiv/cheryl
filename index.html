@@ -235,7 +235,7 @@
     <div id="wxMain" style="font-family:var(--hud);font-size:24px;color:var(--cy2);letter-spacing:.06em;text-shadow:0 0 14px rgba(111,214,242,.5)">--</div>
     <div id="wxSub" style="font-family:var(--hud);font-size:9px;color:var(--dim);margin-top:6px;line-height:1.9;letter-spacing:.05em">OPEN-METEO - LOADING</div>
   </div>
-  <div class="sidefoot">LOCATION &nbsp;SOUTH FLORIDA<br>NETWORK &nbsp;<span class="ok">ONLINE - FREE TIER</span><br>BUILD &nbsp;CHERYL-OS 0.3</div>
+  <div class="sidefoot">LOCATION &nbsp;SOUTH FLORIDA<br>NETWORK &nbsp;<span class="ok">ONLINE - FREE TIER</span><br>BUILD &nbsp;CHERYL-OS 0.4</div>
 </aside>
 <main>
   <div class="topbar">
@@ -904,29 +904,40 @@ $("tVTest").addEventListener("click", () => {
   speak("Voice check. Cheryl can hear you and answers out loud.", true);
 });
 
+let resumeKick = null;
 function speak(text, force){
   if ((!settings.speak && !force) || !window.speechSynthesis) return false;
   const clean = text.replace(/\*\*|`/g, "").slice(0, 1200);
   const u = new SpeechSynthesisUtterance(clean);
   if (voice) u.voice = voice;
   u.rate = 1.02; u.pitch = 1;
+  window._cherylUtt = u; /* Chrome GCs unreferenced utterances mid-speech */
   let started = false, settled = false;
   const done = (ok) => {
     if (settled) return;
     settled = true;
+    clearInterval(resumeKick); resumeKick = null;
     setVOut(ok ? "VOICE OUT: READY" : "VOICE OUT: BLOCKED - TAP TEST VOICE");
     if (!ok) logEvent("Voice output did not start");
     if (state === "speaking"){
       if (settings.hf && SR && activated) startListening(); else setState("idle");
     }
   };
-  u.onstart = () => { started = true; setState("speaking"); setVOut("VOICE OUT: SPEAKING"); };
+  u.onstart = () => {
+    started = true; setState("speaking"); setVOut("VOICE OUT: SPEAKING");
+    /* Chrome desktop stalls long utterances after ~15s; resume() kicks it */
+    clearInterval(resumeKick);
+    resumeKick = setInterval(() => {
+      try{ if (speechSynthesis.speaking && !speechSynthesis.paused) speechSynthesis.resume(); }catch(e){}
+    }, 5000);
+  };
   u.onend = () => done(true);
   u.onerror = (e) => { logEvent("Voice error: " + (e && e.error || "unknown")); done(false); };
   try{ speechSynthesis.cancel(); }catch(e){}
+  /* cancel() and speak() in the same tick silently drops the utterance on Chrome */
   setTimeout(() => {
     try{ speechSynthesis.speak(u); }catch(e){ done(false); }
-  }, 60);
+  }, 150);
   setTimeout(() => { if (!started) done(false); }, 2500);
   return true;
 }
