@@ -204,57 +204,91 @@
     .coreviz{min-height:220px}
     #thread{max-height:52vh}
   }
+
+/* ---------- minimalist layout (v18) ---------- */
+.shell{display:block}
+main.minmain{max-width:680px;margin:0 auto;padding:14px 16px 26px;display:flex;flex-direction:column;gap:12px;min-height:100dvh}
+.minhead{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:2px}
+.minhead .brand{border:0;padding:0}
+.minheadR{display:flex;align-items:center;gap:12px}
+.minheadR .clock{text-align:right}
+.gearbtn{width:36px;height:36px;border-radius:50%;border:1px solid var(--line2);background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;flex:none}
+.gearbtn svg{width:15px;height:15px;stroke:var(--dim);fill:none;stroke-width:1.5;stroke-linecap:round}
+.gearbtn:active{opacity:.7}
+.coreviz{grid-column:auto;min-height:300px}
+.minvoice{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:2px 6px}
+.minvoice .vmic{margin:0}
+.minvoice .wave{margin:4px 0 0}
+.minwx{text-align:right;flex:none}
+#wxMain{font-family:var(--hud);font-size:20px;color:var(--cy2);letter-spacing:.06em;text-shadow:0 0 14px rgba(111,214,242,.5)}
+#wxSub{font-family:var(--hud);font-size:9px;color:var(--dim);margin-top:5px;line-height:1.8;letter-spacing:.05em}
+.chatpanel{min-height:160px}
+#thread{max-height:36vh}
+.minilog .feed{max-height:110px}
+.minfoot{text-align:center;font-family:var(--hud);font-size:9px;color:var(--dim2);letter-spacing:.12em;padding:4px 0}
+.talkbar{position:sticky;bottom:0;z-index:3}
+.overlay .setgrid{display:flex;flex-direction:column;gap:8px;margin-top:16px}
+.overlay .setgrid h3{font-family:var(--hud);font-size:9px;letter-spacing:.22em;color:var(--dim);text-transform:uppercase}
+#setOverlay{z-index:11}
+#memOverlay{z-index:12}
 </style>
 </head>
 <body>
 <div class="shell">
-<aside>
-  <div class="brand">
-    <svg class="hex" viewBox="0 0 32 32"><g fill="none" stroke="#6fd6f2" stroke-width="1.2"><circle cx="16" cy="16" r="8"/><ellipse cx="16" cy="16" rx="8" ry="3.2"/><ellipse cx="16" cy="16" rx="3.2" ry="8"/><ellipse cx="16" cy="16" rx="12.5" ry="3.6" transform="rotate(-24 16 16)" opacity=".7"/><ellipse cx="16" cy="16" rx="14" ry="4" transform="rotate(16 16 16)" opacity=".45"/></g></svg>
-    <div><b>CHERYLX</b><small>COMMAND CENTER</small></div>
+<main class="minmain">
+  <div class="minhead">
+    <div class="brand">
+      <svg class="hex" viewBox="0 0 32 32"><g fill="none" stroke="#6fd6f2" stroke-width="1.2"><circle cx="16" cy="16" r="8"/><ellipse cx="16" cy="16" rx="8" ry="3.2"/><ellipse cx="16" cy="16" rx="3.2" ry="8"/><ellipse cx="16" cy="16" rx="12.5" ry="3.6" transform="rotate(-24 16 16)" opacity=".7"/><ellipse cx="16" cy="16" rx="14" ry="4" transform="rotate(16 16 16)" opacity=".45"/></g></svg>
+      <div><b>CHERYLX</b></div>
+    </div>
+    <div class="minheadR">
+      <span class="syspill"><b id="sysState">OPTIMAL</b></span>
+      <div class="clock"><div class="d" id="cDate">--</div><div class="t" id="cTime">--:--:--</div></div>
+      <button class="gearbtn" id="gearBtn" title="Settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.2 2.2M16.9 16.9l2.2 2.2M19.1 4.9l-2.2 2.2M7.1 16.9l-2.2 2.2"/></svg></button>
+    </div>
   </div>
-  <nav>
-    <button class="navi on"><span class="led"></span>Command Center</button>
-    <button class="navi" id="tMemory"><span class="led"></span>Memory</button>
-    <button class="navi" id="tNew"><span class="led"></span>New Chat</button>
-    <button class="navi" id="tSearch"><span class="led"></span>Search<span class="cnt" id="navSearch">OFF</span></button>
-    <button class="navi" id="tSpeak"><span class="led"></span>Voice<span class="cnt" id="navVoice">OFF</span></button>
-  </nav>
-  <div class="sidepanel">
-    <h3>Voice Status</h3>
-    <div class="wave" id="wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+  <section class="panel coreviz" id="corePanel">
+    <canvas id="globe" style="position:absolute;inset:0;width:100%;height:100%"></canvas>
+    <div class="coretitle"><h1>CHERYL</h1><div class="ver" id="coreVer">V0.2 // GPT-OSS-20B // FREE TIER</div></div>
+  </section>
+
+  <div class="minvoice">
     <div class="vmic">
       <div class="state" id="vState">STANDBY</div>
       <button id="mic" title="Talk to Cheryl"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="21"/></svg></button>
+      <div class="wave" id="wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
       <div class="tap" id="vTap">TAP ONCE - ALWAYS ON</div>
-      <div class="tap" id="vOut" style="margin-top:4px">VOICE OUT: --</div>
+      <div class="tap" id="vOut">VOICE OUT: --</div>
     </div>
-    <button class="chipbtn" id="tHands">Hands-free: off</button>
-    <button class="chipbtn" id="tVTest" style="margin-top:6px">Test voice</button>
-    <h3 style="margin-top:16px">Faster brain - optional</h3>
-    <input id="groqKey" type="password" placeholder="Paste free Groq key" autocomplete="off" style="width:100%;background:#0a0e12;border:1px solid #22303a;color:#7fd6f2;font-family:var(--hud);font-size:10px;letter-spacing:.05em;padding:8px;border-radius:6px;margin-top:4px">
-    <button class="chipbtn" id="tKeySave" style="margin-top:6px">Save key - this device only</button>
-    <button class="chipbtn" id="tKeyClear" style="margin-top:4px">Clear key</button>
-    <div class="tap" id="keyStat" style="margin-top:6px">BRAIN: GPT-OSS-20B - POLLINATIONS</div>
-    <h3 style="margin-top:16px">Weather - Wellington FL</h3>
-    <div id="wxMain" style="font-family:var(--hud);font-size:24px;color:var(--cy2);letter-spacing:.06em;text-shadow:0 0 14px rgba(111,214,242,.5)">--</div>
-    <div id="wxSub" style="font-family:var(--hud);font-size:9px;color:var(--dim);margin-top:6px;line-height:1.9;letter-spacing:.05em">OPEN-METEO - LOADING</div>
+    <div class="minwx">
+      <div id="wxMain">--</div>
+      <div id="wxSub">OPEN-METEO - LOADING</div>
+    </div>
   </div>
-  <div class="sidefoot">LOCATION &nbsp;SOUTH FLORIDA<br>NETWORK &nbsp;<span class="ok">ONLINE - FREE TIER</span><br>BUILD &nbsp;CHERYLX-OS 0.5</div>
-</aside>
-<main>
-  <div class="topbar">
-    <span class="syspill">SYSTEM STATUS&nbsp;&nbsp;<b id="sysState">OPTIMAL</b></span>
-    <div class="clock"><div class="d" id="cDate">--</div><div class="t" id="cTime">--:--:--</div></div>
-    <div class="operator"><div class="av">JM</div><div><b>JAMES</b><small>OPERATOR</small></div></div>
-  </div>
-  <div class="deck">
-    <section class="panel coreviz" id="corePanel">
-      <canvas id="globe" style="position:absolute;inset:0;width:100%;height:100%"></canvas>
-      <div class="coretitle"><h1>CHERYL</h1><div class="sub">AI CORE</div><div class="ver" id="coreVer">V0.2 // GPT-OSS-20B // FREE TIER</div></div>
-    </section>
-    <section class="panel">
-      <div class="ptitle">AI CORE OVERVIEW<span class="tag">REAL-TIME</span></div>
+
+  <section class="panel chatpanel">
+    <div id="thread"></div>
+  </section>
+
+  <form class="talkbar" id="composer" autocomplete="off">
+    <div class="talkpill">
+      <textarea id="input" rows="1" placeholder="Talk to Cheryl"></textarea>
+      <button type="button" class="iconbtn" id="mic2" title="Talk to Cheryl"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="21"/></svg></button>
+      <button type="submit" class="iconbtn" id="send" title="Send"><svg viewBox="0 0 24 24"><line x1="4" y1="12" x2="20" y2="12"/><polyline points="13 5 20 12 13 19"/></svg></button>
+    </div>
+  </form>
+
+  <section class="panel minilog">
+    <div class="ptitle">LOG</div>
+    <div class="feed" id="feed"></div>
+  </section>
+
+  <div class="minfoot">CHERYLX-OS 0.5 - SOUTH FLORIDA - <span id="tbModel">GPT-OSS-20B</span> - FREE TIER</div>
+
+  <div id="parked" style="display:none">
+    <span class="tag" id="chatCount">0 EXCHANGES</span>
+<div class="ptitle">AI CORE OVERVIEW<span class="tag">REAL-TIME</span></div>
       <div class="kv"><div class="ico"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/></svg></div><div><b>Core</b><span id="ovCore">Active</span></div></div>
       <div class="kv"><div class="ico"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg></div><div><b>Memory</b><span id="ovMem">-</span></div></div>
       <div class="kv"><div class="ico"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="21"/></svg></div><div><b>Voice</b><span id="ovVoice">Off</span></div></div>
@@ -262,11 +296,7 @@
       <div class="kv"><div class="ico"><svg viewBox="0 0 24 24"><path d="M3 12h4l2-6 4 12 2-6h6"/></svg></div><div><b>Hands-free</b><span id="ovHf">Off</span></div></div>
       <div class="kv"><div class="ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg></div><div><b>System</b><span id="ovSys">Optimal</span></div></div>
     </section>
-    <section class="panel">
-      <div class="ptitle">LIVE LOG<span class="tag">THIS SESSION</span></div>
-      <div class="feed" id="feed"></div>
-    </section>
-    <section class="panel mods">
+<section class="panel mods">
       <div class="mod" id="mSearch"><div class="ico"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="16" y1="16" x2="21" y2="21"/></svg></div><div><b>Web Search</b><span>Wikipedia + DuckDuckGo</span></div><div class="bars"><i></i><i></i><i></i><i></i><i></i></div></div>
       <div class="mod" id="mVoice"><div class="ico"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/></svg></div><div><b>Voice I/O</b><span>Device speech engine</span></div><div class="bars"><i></i><i></i><i></i><i></i><i></i></div></div>
       <div class="mod" id="mMemory"><div class="ico"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/></svg></div><div><b>Memory</b><span id="mMemSub">-</span></div><div class="bars"><i></i><i></i><i></i><i></i><i></i></div></div>
@@ -274,25 +304,14 @@
       <div class="mod" id="mHands"><div class="ico"><svg viewBox="0 0 24 24"><path d="M3 12h4l2-6 4 12 2-6h6"/></svg></div><div><b>Hands-free</b><span>Auto re-listen loop</span></div><div class="bars"><i></i><i></i><i></i><i></i><i></i></div></div>
       <div class="mod live"><div class="ico"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-9-9"/><path d="M21 3l-9 9"/></svg></div><div><b>Offline Shell</b><span>Service worker</span></div><div class="bars"><i></i><i></i><i></i><i></i><i></i></div></div>
     </section>
-    <section class="panel">
-      <div class="ptitle">QUICK COMMANDS</div>
-      <div class="qcmd">
-        <button data-q="What do you know about me?"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg>What do you know</button>
-        <button data-q="What is the weather right now?"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg>Weather now</button>
-        <button data-q="What time is it?"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>Time</button>
-        <button data-q="Give me a one-line pep talk"><svg viewBox="0 0 24 24"><path d="M13 2L4 14h6l-1 8 9-12h-6z"/></svg>Pep talk</button>
-      </div>
-    </section>
-    <section class="panel">
-      <div class="ptitle">SYSTEM MONITOR</div>
+<div class="ptitle">SYSTEM MONITOR</div>
       <div class="gauges">
         <div class="gauge"><svg viewBox="0 0 64 64"><circle class="garc" cx="32" cy="32" r="26"/><circle class="gaval" id="gMemArc" cx="32" cy="32" r="26" stroke-dasharray="163.4" stroke-dashoffset="163.4"/></svg><div class="gv" id="gMemV">-</div><div class="gl">MEMORY</div></div>
         <div class="gauge"><svg viewBox="0 0 64 64"><circle class="garc" cx="32" cy="32" r="26"/><circle class="gaval" id="gLogArc" cx="32" cy="32" r="26" stroke-dasharray="163.4" stroke-dashoffset="163.4"/></svg><div class="gv" id="gLogV">-</div><div class="gl">LOG LINES</div></div>
         <div class="gauge"><svg viewBox="0 0 64 64"><circle class="garc" cx="32" cy="32" r="26"/><circle class="gaval" id="gWebArc" cx="32" cy="32" r="26" stroke-dasharray="163.4" stroke-dashoffset="163.4"/></svg><div class="gv" id="gWebV">-</div><div class="gl">WEB FETCHES</div></div>
       </div>
     </section>
-    <section class="panel">
-      <div class="ptitle">MEMORY INSIGHTS</div>
+<div class="ptitle">MEMORY INSIGHTS</div>
       <div class="mins">
         <svg class="spark" id="spark" viewBox="0 0 120 40" preserveAspectRatio="none"><polyline fill="none" stroke="#6fd6f2" stroke-width="1.4" points=""/></svg>
         <div class="mstats">
@@ -302,8 +321,7 @@
         </div>
       </div>
     </section>
-    <section class="panel">
-      <div class="ptitle">LLM STATUS<span class="tag">1 CONNECTED</span></div>
+<div class="ptitle">LLM STATUS<span class="tag">1 CONNECTED</span></div>
       <div class="llm">
         <div class="prov"><b>Open model</b><span class="on">CONNECTED - FREE</span></div>
         <div class="prov"><b>Wikipedia</b><span id="pvSearch">SEARCH OFF</span></div>
@@ -311,21 +329,15 @@
         <div class="prov"><b>ElevenLabs</b><span>AWAITING KEY</span></div>
       </div>
     </section>
-    <section class="panel chatpanel">
-      <div class="ptitle">CONVERSATION LOG<span class="tag" id="chatCount">0 EXCHANGES</span></div>
-      <div id="thread"></div>
+<div class="ptitle">QUICK COMMANDS</div>
+      <div class="qcmd">
+        <button data-q="What do you know about me?"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg>What do you know</button>
+        <button data-q="What is the weather right now?"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg>Weather now</button>
+        <button data-q="What time is it?"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>Time</button>
+        <button data-q="Give me a one-line pep talk"><svg viewBox="0 0 24 24"><path d="M13 2L4 14h6l-1 8 9-12h-6z"/></svg>Pep talk</button>
+      </div>
     </section>
   </div>
-  <form class="talkbar" id="composer" autocomplete="off">
-    <div class="tb-meta">LOCATION&nbsp;&nbsp;SOUTH FLORIDA<br>NETWORK&nbsp;&nbsp;<span class="on">ONLINE</span></div>
-    <div class="talkpill">
-      <span class="plabel">TALK TO CHERYL</span>
-      <textarea id="input" rows="1" placeholder="type or tap the mic"></textarea>
-      <button type="button" class="iconbtn" id="mic2" title="Talk to Cheryl"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="21"/></svg></button>
-      <button type="submit" class="iconbtn" id="send" title="Send"><svg viewBox="0 0 24 24"><line x1="4" y1="12" x2="20" y2="12"/><polyline points="13 5 20 12 13 19"/></svg></button>
-    </div>
-    <div class="tb-meta">CORE&nbsp;&nbsp;<span class="on">LISTENING</span><br>MODEL&nbsp;&nbsp;<span id="tbModel">GPT-OSS-20B</span></div>
-  </form>
 </main>
 </div>
 
@@ -337,6 +349,22 @@
   <div class="ovrow">
     <button class="chipbtn" id="memSave">Save</button>
     <button class="chipbtn" id="memReset">Reset to default</button>
+  </div>
+</div>
+<div class="overlay" id="setOverlay">
+  <div class="ovh"><h2>Settings</h2><button class="chipbtn" id="setClose" style="width:auto;padding:8px 16px">Close</button></div>
+  <div class="setgrid">
+    <button class="chipbtn" id="tSpeak">Voice <span class="cnt" id="navVoice">OFF</span></button>
+    <button class="chipbtn" id="tHands">Hands-free: off</button>
+    <button class="chipbtn" id="tSearch">Search <span class="cnt" id="navSearch">OFF</span></button>
+    <button class="chipbtn" id="tVTest">Test voice</button>
+    <button class="chipbtn" id="tMemory">Edit memory file</button>
+    <button class="chipbtn" id="tNew">New chat</button>
+    <h3 style="margin-top:14px">Faster brain - optional</h3>
+    <input id="groqKey" type="password" placeholder="Paste free Groq key" autocomplete="off" style="width:100%;background:#0a0e12;border:1px solid #22303a;color:#7fd6f2;font-family:var(--hud);font-size:10px;letter-spacing:.05em;padding:8px;border-radius:6px">
+    <button class="chipbtn" id="tKeySave">Save key - this device only</button>
+    <button class="chipbtn" id="tKeyClear">Clear key</button>
+    <div class="tap" id="keyStat" style="font-family:var(--hud);font-size:9px;color:var(--dim2);letter-spacing:.1em">BRAIN: GPT-OSS-20B - POLLINATIONS</div>
   </div>
 </div>
 <script>
@@ -1304,6 +1332,9 @@ input.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); send(); }
 });
 $("composer").addEventListener("submit", (e) => { e.preventDefault(); send(); });
+
+$("gearBtn").addEventListener("click", () => { $("setOverlay").classList.add("open"); });
+$("setClose").addEventListener("click", () => { $("setOverlay").classList.remove("open"); });
 
 /* ---------- boot ---------- */
 paintSettings();
