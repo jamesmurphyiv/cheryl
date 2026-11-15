@@ -227,8 +227,10 @@
       <div class="state" id="vState">STANDBY</div>
       <button id="mic" title="Talk to Cheryl"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="21"/></svg></button>
       <div class="tap" id="vTap">TAP ONCE - ALWAYS ON</div>
+      <div class="tap" id="vOut" style="margin-top:4px">VOICE OUT: --</div>
     </div>
     <button class="chipbtn" id="tHands">Hands-free: off</button>
+    <button class="chipbtn" id="tVTest" style="margin-top:6px">Test voice</button>
     <h3 style="margin-top:16px">Weather - Wellington FL</h3>
     <div id="wxMain" style="font-family:var(--hud);font-size:24px;color:var(--cy2);letter-spacing:.06em;text-shadow:0 0 14px rgba(111,214,242,.5)">--</div>
     <div id="wxSub" style="font-family:var(--hud);font-size:9px;color:var(--dim);margin-top:6px;line-height:1.9;letter-spacing:.05em">OPEN-METEO - LOADING</div>
@@ -813,23 +815,43 @@ function pickVoice(){
 if (window.speechSynthesis){ pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
 
 let activated = false, lastHeard = "", lastHeardAt = 0, restartTimer = null;
+let heard = "", heardInterim = "", silenceTimer = null;
+function setVOut(t){ const el = $("vOut"); if (el) el.textContent = t; }
+setVOut(window.speechSynthesis ? "VOICE OUT: READY" : "VOICE OUT: NOT SUPPORTED");
+function flushHeard(){
+  clearTimeout(silenceTimer); silenceTimer = null;
+  const text = (heard + " " + heardInterim).trim();
+  heard = ""; heardInterim = "";
+  if (text.replace(/[^a-z0-9]/gi, "").length < 3) return;
+  if (busy || state === "speaking" || state === "thinking") return;
+  const now = Date.now();
+  if (text.toLowerCase() === lastHeard && now - lastHeardAt < 6000) return;
+  lastHeard = text.toLowerCase(); lastHeardAt = now;
+  logEvent('Voice input: "' + text.slice(0, 60) + '"', true);
+  input.value = text; autogrow(); send();
+}
 function startListening(){
   if (!SR || listening || busy) return;
   if (state === "speaking" || state === "thinking") return;
   if (window.speechSynthesis) speechSynthesis.cancel();
   rec = new SR();
-  rec.lang = "en-US"; rec.interimResults = false; rec.maxAlternatives = 1;
+  rec.lang = "en-US"; rec.interimResults = true; rec.continuous = true; rec.maxAlternatives = 1;
   rec.onresult = (ev) => {
     if (window.speechSynthesis && speechSynthesis.speaking) return;
-    const text = (ev.results[0][0].transcript || "").trim();
-    const conf = ev.results[0][0].confidence || 1;
-    const now = Date.now();
-    if (text.replace(/[^a-z0-9]/gi, "").length < 3) return;
-    if (conf < 0.35) return;
-    if (text.toLowerCase() === lastHeard && now - lastHeardAt < 6000) return;
-    lastHeard = text.toLowerCase(); lastHeardAt = now;
-    logEvent('Voice input: "' + text.slice(0, 60) + '"', true);
-    input.value = text; autogrow(); send();
+    for (let i = ev.resultIndex; i < ev.results.length; i++){
+      const r = ev.results[i];
+      if (r.isFinal) heard += " " + (r[0].transcript || "");
+      else heardInterim = r[0].transcript || "";
+    }
+    if (ev.results[ev.results.length - 1].isFinal) heardInterim = "";
+    clearTimeout(silenceTimer);
+    silenceTimer = setTimeout(() => {
+      if (busy || state === "speaking" || state === "thinking"){
+        silenceTimer = setTimeout(flushHeard, 1000);
+        return;
+      }
+      flushHeard();
+    }, 2000);
   };
   rec.onend = () => {
     listening = false;
@@ -857,7 +879,7 @@ function startListening(){
 }
 function toggleMic(){
   activated = true;
-  if (listening){ try{ rec.stop(); }catch(e){} return; }
+  if (listening){ heard = ""; heardInterim = ""; try{ rec.stop(); }catch(e){} return; }
   startListening();
 }
 $("mic").addEventListener("click", toggleMic);
@@ -867,27 +889,45 @@ if (!SR){ $("vTap").textContent = "VOICE INPUT NOT ON THIS BROWSER"; }
 document.addEventListener("pointerdown", function arm(){
   if (activated) return;
   activated = true;
+  if (window.speechSynthesis){
+    try{ const wu = new SpeechSynthesisUtterance(" "); wu.volume = 0; speechSynthesis.speak(wu); }catch(e){}
+  }
   if (settings.hf && SR){
     startListening();
-    if (settings.speak) speak("Listening.");
+    if (settings.speak) setTimeout(() => speak("Listening."), 250);
     logEvent("Always-on listening armed");
   }
 }, {once:false});
+$("tVTest").addEventListener("click", () => {
+  activated = true;
+  logEvent("Voice self-test");
+  speak("Voice check. Cheryl can hear you and answers out loud.", true);
+});
 
-function speak(text){
-  if (!settings.speak || !window.speechSynthesis) return false;
-  speechSynthesis.cancel();
+function speak(text, force){
+  if ((!settings.speak && !force) || !window.speechSynthesis) return false;
   const clean = text.replace(/\*\*|`/g, "").slice(0, 1200);
   const u = new SpeechSynthesisUtterance(clean);
   if (voice) u.voice = voice;
   u.rate = 1.02; u.pitch = 1;
-  u.onstart = () => setState("speaking");
-  u.onend = () => {
+  let started = false, settled = false;
+  const done = (ok) => {
+    if (settled) return;
+    settled = true;
+    setVOut(ok ? "VOICE OUT: READY" : "VOICE OUT: BLOCKED - TAP TEST VOICE");
+    if (!ok) logEvent("Voice output did not start");
     if (state === "speaking"){
-      if (settings.hf && SR) startListening(); else setState("idle");
+      if (settings.hf && SR && activated) startListening(); else setState("idle");
     }
   };
-  speechSynthesis.speak(u);
+  u.onstart = () => { started = true; setState("speaking"); setVOut("VOICE OUT: SPEAKING"); };
+  u.onend = () => done(true);
+  u.onerror = (e) => { logEvent("Voice error: " + (e && e.error || "unknown")); done(false); };
+  try{ speechSynthesis.cancel(); }catch(e){}
+  setTimeout(() => {
+    try{ speechSynthesis.speak(u); }catch(e){ done(false); }
+  }, 60);
+  setTimeout(() => { if (!started) done(false); }, 2500);
   return true;
 }
 
