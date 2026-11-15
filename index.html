@@ -263,6 +263,7 @@ main.minmain{max-width:680px;margin:0 auto;padding:14px 16px 26px;display:flex;f
       <div class="wave" id="wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
       <div class="tap" id="vTap">TAP ONCE - ALWAYS ON</div>
       <div class="tap" id="vOut">VOICE OUT: --</div>
+      <div class="tap" id="vEar">HEARS: --</div>
     </div>
     <div class="minwx">
       <div id="wxMain">--</div>
@@ -1051,6 +1052,7 @@ function voiceWanted(){ return activated && settings.hf && !manualStop && !permD
 let heard = "", heardInterim = "", silenceTimer = null;
 let netBackoff = 0, captureFails = 0, meterShedForRec = false, startDog = null, recDidStart = false, lastRecErr = "", permDenied = false;
 function setVOut(t){ const el = $("vOut"); if (el) el.textContent = t; }
+function setVEar(t){ const el = $("vEar"); if (el) el.textContent = t.length > 64 ? "HEARS: ..." + t.slice(-60) : t; }
 setVOut(window.speechSynthesis ? "VOICE OUT: READY" : "VOICE OUT: NOT SUPPORTED");
 function norm(t){ return t.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim(); }
 let lastReplyNorm = "";
@@ -1058,7 +1060,7 @@ const NAME_RE = /\b(cheryl|cheryle|cheryll|sheryl|sherri|sheri|cherie|cherry|sha
 function flushHeard(){
   clearTimeout(silenceTimer); silenceTimer = null;
   const text = (heard + " " + heardInterim).trim();
-  heard = ""; heardInterim = "";
+  heard = ""; heardInterim = ""; setVEar("HEARS: --");
   if (text.replace(/[^a-z0-9]/gi, "").length < 3){ if (text) logEvent('Ignored noise: "' + text.slice(0, 40) + '"'); return; }
   if (busy || state === "speaking" || state === "thinking"){
     pendingVoice = pendingVoice ? pendingVoice + ". " + text : text;
@@ -1145,6 +1147,7 @@ function startListening(){
     if (ev.results[ev.results.length - 1].isFinal) heardInterim = "";
     /* wake word on interim results too: the conversation opens the instant her name is heard */
     if (!convOpen() && heardInterim && NAME_RE.test(heardInterim)) convExtend();
+    setVEar("HEARS: " + ((heard + " " + heardInterim).trim() || "--"));
     clearTimeout(silenceTimer);
     silenceTimer = setTimeout(() => {
       if (busy || state === "speaking" || state === "thinking"){
@@ -1216,6 +1219,10 @@ FakeRec.prototype.start = function(){
     fire(600, () => { if (this.onresult) this.onresult({ resultIndex: 0, results: [res("cheryl", false)] }); });
     fire(1100, () => { if (this.onresult) this.onresult({ resultIndex: 0, results: [res("cheryl what is the weather tomorrow", true)] }); });
     fire(2600, () => { if (this.onend) this.onend(); });
+    fire(6000, () => { if (this.onresult) this.onresult({ resultIndex: 0, results: [res("cheryl", false)] }); });
+    fire(7000, () => { if (this.onresult) this.onresult({ resultIndex: 0, results: [res("cheryl tell me a", false)] }); });
+    fire(8000, () => { if (this.onresult) this.onresult({ resultIndex: 0, results: [res("cheryl tell me a story", false)] }); });
+    fire(8600, () => { if (this.onend) this.onend(); });
   } else {
     fire(1200, () => { if (this.onerror) this.onerror({ error: "no-speech" }); if (this.onend) this.onend(); });
   }
