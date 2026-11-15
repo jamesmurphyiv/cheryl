@@ -849,7 +849,7 @@ const SYSTEM = [
 "=== MEMORY FILE ==="
 ].join("\n");
 
-const GREETING = "James. Cheryl online. Tap anywhere once and I stay listening - say my name or just talk, and I answer out loud. Weather is live Open-Meteo for Wellington, updated every twenty minutes. My memory file is under Memory in the nav - read it, edit it, it stays on this device.";
+const GREETING = "James. Cheryl online. The mic stays on while this page is open - say my name to open a conversation, or tap the spacebar to open and close it. Green tally means I am listening, red means I am not. Weather is live Open-Meteo for Wellington. My memory file is under Memory in the nav - read it, edit it, it stays on this device.";
 
 const QUICK = [];
 
@@ -1017,6 +1017,7 @@ function setState(s){
   $("sysState").textContent = s === "thinking" ? "WORKING" : "OPTIMAL";
   $("corePanel").className = "panel coreviz " + s;
   window.__uniState = s;
+  if (s === "speaking" && typeof convUntil !== "undefined") convUntil = Date.now() + 25000;
 }
 /* ---------- voice ---------- */
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -1036,6 +1037,9 @@ function pickVoice(){
 if (window.speechSynthesis){ pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
 
 let activated = false, lastHeard = "", lastHeardAt = 0, restartTimer = null;
+let convUntil = 0;
+function convOpen(){ return Date.now() < convUntil; }
+function convExtend(){ convUntil = Date.now() + 25000; }
 let heard = "", heardInterim = "", silenceTimer = null;
 function setVOut(t){ const el = $("vOut"); if (el) el.textContent = t; }
 setVOut(window.speechSynthesis ? "VOICE OUT: READY" : "VOICE OUT: NOT SUPPORTED");
@@ -1060,6 +1064,7 @@ function flushHeard(){
   let body = text;
   const m = text.match(NAME_RE);
   if (m){
+    convExtend();
     const rest = (text.slice(0, m.index) + " " + text.slice(m.index + m[0].length))
       .replace(/\b(hey|hi|okay|ok|please|yo)\b/gi, " ").replace(/\s+/g, " ").trim();
     if (rest.replace(/[^a-z0-9]/gi, "").length < 3){
@@ -1069,6 +1074,11 @@ function flushHeard(){
     }
     body = rest;
   }
+  else if (!convOpen()){
+    logEvent('Background speech, no Cheryl - ignored: "' + text.slice(0, 50) + '"');
+    return;
+  }
+  else convExtend();
   logEvent('Voice input: "' + body.slice(0, 60) + '"', true);
   input.value = body; autogrow(); send();
 }
@@ -1121,6 +1131,11 @@ function startListening(){
     $("mic").classList.remove("listening"); $("mic2").classList.remove("listening");
     if (state === "listening") setState("idle");
     if (ev && (ev.error === "not-allowed" || ev.error === "service-not-allowed")){
+      if (typeof autoArming !== "undefined" && autoArming){
+        $("vTap").textContent = "TAP ONCE TO ARM MIC";
+        logEvent("Browser blocked auto-mic - needs one tap");
+        return;
+      }
       settings.hf = false; saveSettings();
       $("vTap").textContent = "MIC BLOCKED - ALLOW IN BROWSER";
       logEvent("Mic permission denied - hands-free off");
@@ -1135,7 +1150,7 @@ function startListening(){
   }catch(e){}
 }
 function toggleMic(){
-  activated = true;
+  activated = true; store.set("activated", 1);
   if (listening){ heard = ""; heardInterim = ""; try{ rec.stop(); }catch(e){} return; }
   startListening();
 }
@@ -1145,7 +1160,7 @@ if (!SR){ $("vTap").textContent = "VOICE INPUT NOT ON THIS BROWSER"; }
 /* browsers require one user gesture before mic + voice; the first tap arms always-on */
 document.addEventListener("pointerdown", function arm(){
   if (activated) return;
-  activated = true;
+  activated = true; store.set("activated", 1);
   if (window.speechSynthesis){
     try{ const wu = new SpeechSynthesisUtterance(" "); wu.volume = 0; speechSynthesis.speak(wu); }catch(e){}
   }
@@ -1156,10 +1171,42 @@ document.addEventListener("pointerdown", function arm(){
   }
 }, {once:false});
 $("tVTest").addEventListener("click", () => {
-  activated = true;
+  activated = true; store.set("activated", 1);
   logEvent("Voice self-test");
   speak("Voice check. Cheryl can hear you and answers out loud.", true);
 });
+/* spacebar opens/closes the conversation (when not typing) */
+window.addEventListener("keydown", (e) => {
+  if (e.code !== "Space" || e.repeat) return;
+  const ae = document.activeElement;
+  if (ae && (ae.tagName === "TEXTAREA" || ae.tagName === "INPUT")) return;
+  e.preventDefault();
+  activated = true; store.set("activated", 1);
+  if (listening || convOpen()){
+    convUntil = 0; heard = ""; heardInterim = ""; pendingVoice = "";
+    try{ if (window.speechSynthesis) speechSynthesis.cancel(); }catch(err){}
+    if (listening){ try{ rec.stop(); }catch(err){} }
+    setState("idle");
+    logEvent("Conversation closed - spacebar");
+  } else {
+    convExtend();
+    logEvent("Conversation opened - spacebar");
+    startListening();
+  }
+});
+/* mic resumes whenever the page is visible again */
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && activated && settings.hf && SR) startListening();
+});
+/* once he has armed the mic on a visit, later visits try to start it on load;
+   browsers that demand a fresh gesture fall back to the tap-to-arm note */
+let autoArming = false;
+if (store.get("activated") && settings.hf && SR){
+  activated = true; autoArming = true;
+  startListening();
+  setTimeout(() => { autoArming = false; }, 4000);
+  logEvent("Mic auto-armed from earlier visit");
+}
 function paintModel(){
   const short = groqKey ? "GPT-OSS-120B" : "GPT-OSS-20B";
   const src = groqKey ? "GROQ FREE KEY - THIS DEVICE" : "POLLINATIONS - NO KEY";
@@ -1458,6 +1505,7 @@ function timeAnswer(q){
 }
 fetchWeather();
 setInterval(fetchWeather, 20 * 60 * 1000);
+setInterval(() => { const t = $("tally"); if (t) t.classList.toggle("on", !!listening || new URLSearchParams(location.search).has("tally")); }, 400);
 
 /* ---------- send flow ---------- */
 async function send(){
@@ -1549,6 +1597,7 @@ async function send(){
   renderAll(); paintStats();
   busy = false; sendBtn.disabled = false;
   input.focus();
+  convExtend();
   flushPending();
 }
 
@@ -1594,6 +1643,8 @@ main.minmain{display:none!important}
 #hBadge .os{font-family:var(--hud);font-size:13px;letter-spacing:.3em;color:#d9f4ff}
 #hBadge .usr{font-family:var(--hud);font-size:7px;letter-spacing:.24em;color:#4f7282;margin-top:2px}
 #hBadge .syspill{margin:0}
+.tally{width:9px;height:9px;border-radius:50%;background:#e5484d;box-shadow:0 0 7px rgba(229,72,77,.8);align-self:center;flex:none}
+.tally.on{background:#52d273;box-shadow:0 0 9px rgba(82,210,115,.95)}
 #hSess{grid-area:1/1/4 span}
 #hSess{grid-column:1/4;grid-row:1}
 #hSess .row{display:flex;gap:14px;font-family:var(--hud);font-size:8px;letter-spacing:.12em;color:#7fa3b5;height:100%;align-items:center}
@@ -1696,6 +1747,9 @@ try{
   const gear = minhead.querySelector('#gearBtn');
   badge.appendChild(minhead.querySelector('.brand'));
   badge.appendChild(osWrap);
+  const tally = mk('span', 'tally', 'tally');
+  tally.title = 'Green: Cheryl is listening. Red: not listening.';
+  badge.appendChild(tally);
   badge.appendChild(pill);
   badge.appendChild(gear);
   shell.appendChild(badge);
