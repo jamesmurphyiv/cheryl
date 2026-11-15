@@ -1274,7 +1274,7 @@ async function searchWeb(query){
 const API = "https://text.pollinations.ai/openai";
 function buildMessages(webCtx){
   const msgs = [{role:"system", content: SYSTEM + "\n" + memory + "\n=== END MEMORY ==="}];
-  const tail = history.slice(-20);
+  const tail = history.slice(-12);
   tail.forEach(m => msgs.push({role: m.role === "user" ? "user" : "assistant", content: m.content}));
   if (webCtx && webCtx.snippets.length){
     msgs.splice(msgs.length - 1, 0, {role:"system", content:"Web results for the next user message:\n" + webCtx.snippets.join("\n\n")});
@@ -1293,11 +1293,16 @@ async function askProvider(p, onToken){
   if (p.needsKey) HEAD["Authorization"] = "Bearer " + groqKey;
   const ctl = new AbortController();
   let gotFirst = false, partialText = "";
-  const wd = setTimeout(() => { if(!gotFirst) ctl.abort(); }, 25000);
+  const wd = setTimeout(() => { if(!gotFirst) ctl.abort(); }, 40000);
   try{
     const res = await fetch(p.url, {method: "POST", headers: HEAD, body: JSON.stringify(Object.assign({}, body, {stream: true})), signal: ctl.signal});
     if (res.status === 401 || res.status === 403){ clearTimeout(wd); return {badKey: true}; }
-    if (res.status === 429){ clearTimeout(wd); return {error: "The free tier is at its limit for a moment. Give it a few seconds and send again."}; }
+    if (res.status === 429 || res.status === 402){
+        clearTimeout(wd);
+        let wait = 0;
+        try{ const j = await res.json(); const m = /Retry after (\d+)s/i.exec((j.error && j.error.message) || ""); if (m) wait = parseInt(m[1], 10); }catch(e){}
+        return {busy: true, wait};
+      }
     if (res.ok && res.body){
       const reader = res.body.getReader();
       const dec = new TextDecoder();
@@ -1332,6 +1337,11 @@ async function askProvider(p, onToken){
   }
   try{
     const r2 = await fetch(p.url, {method: "POST", headers: HEAD, body: JSON.stringify(body), signal: AbortSignal.timeout(60000)});
+    if (r2.status === 429 || r2.status === 402){
+      let wait = 0;
+      try{ const j = await r2.json(); const m = /Retry after (\d+)s/i.exec((j.error && j.error.message) || ""); if (m) wait = parseInt(m[1], 10); }catch(e){}
+      return {busy: true, wait};
+    }
     if (r2.ok){
       const j = await r2.json();
       const t = j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
@@ -1341,25 +1351,38 @@ async function askProvider(p, onToken){
   return null;
 }
 const sleepMs = ms => new Promise(r => setTimeout(r, ms));
-async function askCheryl(onToken){
+async function askCheryl(onToken, onStatus){
   const order = [];
   if (groqKey) order.push(PROVIDERS[0]);
   order.push(PROVIDERS[1], PROVIDERS[2]);
-  let lastErr = null;
+  let waited = 0, toldHim = false;
   for (const p of order){
-    for (let attempt = 0; attempt < 2; attempt++){
-      if (attempt) await sleepMs(1500 * attempt);
+    let fails = 0;
+    for(;;){
       const r = await askProvider(p, onToken);
       if (r && r.text){
         if (brainName !== p.name){ brainName = p.name; paintModel(); }
         return r;
       }
       if (r && r.badKey){ logEvent("Groq key rejected by the API - check it in the side panel"); break; }
-      if (r && r.error){ lastErr = r.error; }
-      if (attempt === 0) logEvent(p.name + " busy - retrying");
+      if (r && r.busy){
+        if (waited >= 130) break;
+        let wait = 6 + waited / 10;
+        if (r.wait) wait = Math.max(wait, Math.min(r.wait + 3, 90));
+        wait = Math.min(wait, 90);
+        waited += wait;
+        if (!toldHim){ toldHim = true; logEvent("Free tier answers one question at a time - waiting for the last one to finish"); }
+        if (onStatus) onStatus("One sec, boss - the free brain allows one question every 45 seconds. Yours is queued, answering in a moment.");
+        await sleepMs(wait * 1000);
+        continue;
+      }
+      fails++;
+      if (fails >= 3) break;
+      logEvent(p.name + " failed - retrying");
+      await sleepMs(1500 * fails);
     }
   }
-  return {error: "The free models are busy right now, boss. Give me a few seconds and ask again."};
+  return {error: "The free brain is slammed right now, boss. Ask again in half a minute - or drop a free Groq key in the side panel and I skip the line."};
 }
 
 /* ---------- weather (Open-Meteo, free, no key) ---------- */
@@ -1478,6 +1501,8 @@ async function send(){
     bodyEl.innerHTML = mdLite(partial);
     scrollBottom();
     pushSpeech(partial);
+  }, (status) => {
+    if (bodyEl.classList.contains("typing")) bodyEl.textContent = status;
   });
   clearTimeout(slowNote);
   bodyEl.classList.remove("typing");
@@ -1536,4 +1561,4 @@ if ("serviceWorker" in navigator){
 }
 </script>
 </body>
-  </html>
+        </html>
