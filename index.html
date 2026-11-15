@@ -226,11 +226,14 @@
     <div class="vmic">
       <div class="state" id="vState">STANDBY</div>
       <button id="mic" title="Talk to Cheryl"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="21"/></svg></button>
-      <div class="tap" id="vTap">TAP TO SPEAK</div>
+      <div class="tap" id="vTap">TAP ONCE - ALWAYS ON</div>
     </div>
     <button class="chipbtn" id="tHands">Hands-free: off</button>
+    <h3 style="margin-top:16px">Weather - Wellington FL</h3>
+    <div id="wxMain" style="font-family:var(--hud);font-size:24px;color:var(--cy2);letter-spacing:.06em;text-shadow:0 0 14px rgba(111,214,242,.5)">--</div>
+    <div id="wxSub" style="font-family:var(--hud);font-size:9px;color:var(--dim);margin-top:6px;line-height:1.9;letter-spacing:.05em">OPEN-METEO - LOADING</div>
   </div>
-  <div class="sidefoot">LOCATION &nbsp;SOUTH FLORIDA<br>NETWORK &nbsp;<span class="ok">ONLINE - FREE TIER</span><br>BUILD &nbsp;CHERYL-OS 0.2</div>
+  <div class="sidefoot">LOCATION &nbsp;SOUTH FLORIDA<br>NETWORK &nbsp;<span class="ok">ONLINE - FREE TIER</span><br>BUILD &nbsp;CHERYL-OS 0.3</div>
 </aside>
 <main>
   <div class="topbar">
@@ -630,7 +633,7 @@ const SYSTEM = [
 "=== MEMORY FILE ==="
 ].join("\n");
 
-const GREETING = "James. Cheryl online. Command center is yours.\n\nI run on a free open model, so there are no tokens and no bill. My memory file is under Memory in the nav - read it, edit it, it stays on this device. Flip Search on and I pull live web results into my answers. Tap the mic and talk; turn Voice on and I answer out loud.\n\nQuick commands are loaded to your right. Or just say the word.";
+const GREETING = "James. Cheryl online. Command center is yours.\n\nTap anywhere once and I stay listening - no buttons after that, and I answer out loud. Ask me the weather any time; that part is live Open-Meteo data for Wellington, not a guess. My memory file is under Memory in the nav - read it, edit it, it stays on this device.\n\nQuick commands are loaded to your right. Or just say the word.";
 
 const QUICK = [];
 
@@ -640,7 +643,8 @@ const store = {
   set(k, v){ try{ localStorage.setItem("cheryl_"+k, JSON.stringify(v)); }catch(e){} }
 };
 let history = store.get("history", []);
-let settings = store.get("settings", {search:false, speak:false, hf:false});
+let settings = store.get("settings", {search:false, speak:true, hf:true});
+if (!store.get("v12m")){ settings.speak = true; settings.hf = true; store.set("v12m", 1); store.set("settings", settings); }
 let memory = store.get("memory", DEFAULT_MEMORY);
 let busy = false;
 let webFetches = 0;
@@ -808,28 +812,67 @@ function pickVoice(){
 }
 if (window.speechSynthesis){ pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
 
+let activated = false, lastHeard = "", lastHeardAt = 0, restartTimer = null;
 function startListening(){
-  if (!SR || listening) return;
+  if (!SR || listening || busy) return;
+  if (state === "speaking" || state === "thinking") return;
   if (window.speechSynthesis) speechSynthesis.cancel();
   rec = new SR();
   rec.lang = "en-US"; rec.interimResults = false; rec.maxAlternatives = 1;
   rec.onresult = (ev) => {
-    const text = ev.results[0][0].transcript;
+    if (window.speechSynthesis && speechSynthesis.speaking) return;
+    const text = (ev.results[0][0].transcript || "").trim();
+    const conf = ev.results[0][0].confidence || 1;
+    const now = Date.now();
+    if (text.replace(/[^a-z0-9]/gi, "").length < 3) return;
+    if (conf < 0.35) return;
+    if (text.toLowerCase() === lastHeard && now - lastHeardAt < 6000) return;
+    lastHeard = text.toLowerCase(); lastHeardAt = now;
     logEvent('Voice input: "' + text.slice(0, 60) + '"', true);
     input.value = text; autogrow(); send();
   };
-  rec.onend = () => { listening = false; $("mic").classList.remove("listening"); $("mic2").classList.remove("listening"); if (state === "listening") setState(busy ? "thinking" : "idle"); };
-  rec.onerror = () => { listening = false; $("mic").classList.remove("listening"); $("mic2").classList.remove("listening"); if (state === "listening") setState("idle"); };
+  rec.onend = () => {
+    listening = false;
+    $("mic").classList.remove("listening"); $("mic2").classList.remove("listening");
+    if (state === "listening") setState(busy ? "thinking" : "idle");
+    if (settings.hf && activated){ clearTimeout(restartTimer); restartTimer = setTimeout(() => { if (!busy) startListening(); }, 350); }
+  };
+  rec.onerror = (ev) => {
+    listening = false;
+    $("mic").classList.remove("listening"); $("mic2").classList.remove("listening");
+    if (state === "listening") setState("idle");
+    if (ev && (ev.error === "not-allowed" || ev.error === "service-not-allowed")){
+      settings.hf = false; saveSettings();
+      $("vTap").textContent = "MIC BLOCKED - ALLOW IN BROWSER";
+      logEvent("Mic permission denied - hands-free off");
+      return;
+    }
+    if (settings.hf && activated){ clearTimeout(restartTimer); restartTimer = setTimeout(() => { if (!busy) startListening(); }, 1200); }
+  };
   try{
     rec.start(); listening = true;
     $("mic").classList.add("listening"); $("mic2").classList.add("listening");
     setState("listening");
   }catch(e){}
 }
-function toggleMic(){ if (listening){ try{ rec.stop(); }catch(e){} return; } startListening(); }
+function toggleMic(){
+  activated = true;
+  if (listening){ try{ rec.stop(); }catch(e){} return; }
+  startListening();
+}
 $("mic").addEventListener("click", toggleMic);
 $("mic2").addEventListener("click", toggleMic);
 if (!SR){ $("vTap").textContent = "VOICE INPUT NOT ON THIS BROWSER"; }
+/* browsers require one user gesture before mic + voice; the first tap arms always-on */
+document.addEventListener("pointerdown", function arm(){
+  if (activated) return;
+  activated = true;
+  if (settings.hf && SR){
+    startListening();
+    if (settings.speak) speak("Listening.");
+    logEvent("Always-on listening armed");
+  }
+}, {once:false});
 
 function speak(text){
   if (!settings.speak || !window.speechSynthesis) return false;
@@ -952,6 +995,49 @@ async function askCheryl(onToken){
   return {error:"The free model is busy right now. Give it a few seconds and send again."};
 }
 
+/* ---------- weather (Open-Meteo, free, no key) ---------- */
+const WX = {lat: 26.6587, lon: -80.2414, data: null, at: 0};
+const WMO = {0:"clear",1:"mainly clear",2:"partly cloudy",3:"overcast",45:"foggy",48:"icy fog",51:"light drizzle",53:"drizzle",55:"heavy drizzle",56:"freezing drizzle",57:"freezing drizzle",61:"light rain",63:"rain",65:"heavy rain",66:"freezing rain",67:"freezing rain",71:"light snow",73:"snow",75:"heavy snow",77:"snow grains",80:"light showers",81:"showers",82:"heavy showers",85:"snow showers",86:"snow showers",95:"thunderstorms",96:"thunderstorms with hail",99:"thunderstorms with hail"};
+function compass(d){ return ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"][Math.round(d / 22.5) % 16]; }
+async function fetchWeather(){
+  try{
+    const u = "https://api.open-meteo.com/v1/forecast?latitude=" + WX.lat + "&longitude=" + WX.lon +
+      "&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,wind_direction_10m" +
+      "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max" +
+      "&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=America%2FNew_York&forecast_days=1";
+    const r = await fetch(u, {signal: AbortSignal.timeout(9000)});
+    if (!r.ok) throw 0;
+    const js = await r.json();
+    WX.data = js; WX.at = Date.now();
+    paintWeather();
+    logEvent("Weather refreshed (Open-Meteo)");
+  }catch(e){
+    if ($("wxSub")) $("wxSub").textContent = "OPEN-METEO - FETCH FAILED, RETRYING";
+  }
+}
+function paintWeather(){
+  if (!WX.data || !$("wxMain")) return;
+  const c = WX.data.current, d = WX.data.daily;
+  const t = new Date(WX.at);
+  const hh = t.getHours(), mm = ("0" + t.getMinutes()).slice(-2), ap = hh >= 12 ? "PM" : "AM";
+  $("wxMain").textContent = Math.round(c.temperature_2m) + "F " + (WMO[c.weather_code] || "changing").toUpperCase();
+  $("wxSub").innerHTML = "FEELS " + Math.round(c.apparent_temperature) + "F - WIND " + Math.round(c.wind_speed_10m) + " MPH " + compass(c.wind_direction_10m) +
+    "<br>HUMIDITY " + c.relative_humidity_2m + "% - RAIN " + (d.precipitation_probability_max[0] || 0) + "%" +
+    "<br>HI " + Math.round(d.temperature_2m_max[0]) + "F / LO " + Math.round(d.temperature_2m_min[0]) + "F" +
+    "<br>" + ((hh % 12) || 12) + ":" + mm + " " + ap + " - OPEN-METEO";
+}
+function weatherAnswer(q){
+  if (!/weather|temperature|forecast|\brain\b|raining|wind|humid|how (hot|cold)|is it (hot|cold)|outside/i.test(q)) return null;
+  if (!WX.data) return "Still pulling the first live reading from Open-Meteo - ask me again in a few seconds.";
+  const c = WX.data.current, d = WX.data.daily;
+  return "Right now in Wellington it is " + Math.round(c.temperature_2m) + " degrees and " + (WMO[c.weather_code] || "changing") +
+    ", feels like " + Math.round(c.apparent_temperature) + ". Wind " + Math.round(c.wind_speed_10m) + " miles per hour out of the " + compass(c.wind_direction_10m) +
+    ", humidity " + c.relative_humidity_2m + " percent. Today's high " + Math.round(d.temperature_2m_max[0]) +
+    ", low " + Math.round(d.temperature_2m_min[0]) + ", rain chance " + (d.precipitation_probability_max[0] || 0) + " percent. Live from Open-Meteo.";
+}
+fetchWeather();
+setInterval(fetchWeather, 20 * 60 * 1000);
+
 /* ---------- send flow ---------- */
 async function send(){
   const text = input.value.trim();
@@ -965,6 +1051,18 @@ async function send(){
   history.push({role:"user", content:text});
   store.set("history", history);
   renderAll(); paintStats();
+  const wxA = weatherAnswer(text);
+  if (wxA){
+    history.push({role:"assistant", content:wxA});
+    addMsg("cheryl", wxA, []);
+    store.set("history", history);
+    renderAll(); paintStats();
+    logEvent("Weather answered from live Open-Meteo cache", true);
+    const spoke = speak(wxA);
+    if (!spoke){ setState("idle"); if (settings.hf && activated && SR) startListening(); }
+    busy = false; sendBtn.disabled = false;
+    return;
+  }
   window._webCtx = null;
   let sources = [];
   if (settings.search || forceSearch){
@@ -1004,7 +1102,7 @@ async function send(){
     store.set("respTimes", respTimes.slice(-24));
     logEvent("Reply in " + secs.toFixed(1) + "s - " + result.text.length + " chars", true);
     const spoke = speak(result.text);
-    if (!spoke) setState("idle");
+    if (!spoke){ setState("idle"); if (settings.hf && activated && SR) startListening(); }
   }
   store.set("history", history);
   renderAll(); paintStats();
