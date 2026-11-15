@@ -826,12 +826,12 @@ function flushHeard(){
   clearTimeout(silenceTimer); silenceTimer = null;
   const text = (heard + " " + heardInterim).trim();
   heard = ""; heardInterim = "";
-  if (text.replace(/[^a-z0-9]/gi, "").length < 3) return;
-  if (busy || state === "speaking" || state === "thinking") return;
+  if (text.replace(/[^a-z0-9]/gi, "").length < 3){ if (text) logEvent('Ignored noise: "' + text.slice(0, 40) + '"'); return; }
+  if (busy || state === "speaking" || state === "thinking"){ logEvent('Heard while busy - dropped: "' + text.slice(0, 50) + '"'); return; }
   const n = norm(text);
-  if (lastReplyNorm && n.length > 8 && lastReplyNorm.indexOf(n) !== -1){ logEvent("Dropped echo of my own reply"); return; }
+  if (lastReplyNorm && n.length > 8 && lastReplyNorm.indexOf(n) !== -1){ logEvent('Dropped echo of my own reply: "' + text.slice(0, 50) + '"'); return; }
   const now = Date.now();
-  if (n === lastHeard && now - lastHeardAt < 6000) return;
+  if (n.length > 12 && n === lastHeard && now - lastHeardAt < 6000){ logEvent('Dropped duplicate: "' + text.slice(0, 50) + '"'); return; }
   lastHeard = n; lastHeardAt = now;
   let body = text;
   const m = text.match(NAME_RE);
@@ -840,7 +840,7 @@ function flushHeard(){
       .replace(/\b(hey|hi|okay|ok|please|yo)\b/gi, " ").replace(/\s+/g, " ").trim();
     if (rest.replace(/[^a-z0-9]/gi, "").length < 3){
       logEvent("Heard my name");
-      speak("Yeah?");
+      speak("Yes boss.");
       return;
     }
     body = rest;
@@ -856,10 +856,17 @@ function startListening(){
   rec = new SR();
   rec.lang = "en-US"; rec.interimResults = true; rec.continuous = true; rec.maxAlternatives = 1;
   rec.onresult = (ev) => {
-    if (window.speechSynthesis && speechSynthesis.speaking) return;
+    if (window.speechSynthesis && speechSynthesis.speaking && speakLock) return;
+    if (window.speechSynthesis && speechSynthesis.speaking && !speakLock){ try{ speechSynthesis.cancel(); }catch(e){} }
+    let gotFinal = false;
     for (let i = ev.resultIndex; i < ev.results.length; i++){
       const r = ev.results[i];
-      if (r.isFinal) heard += " " + (r[0].transcript || "");
+      if (r.isFinal){
+        gotFinal = true;
+        heard += " " + (r[0].transcript || "");
+        const tr = (r[0].transcript || "").trim();
+        if (tr) logEvent('Heard: "' + tr.slice(0, 80) + '"');
+      }
       else heardInterim = r[0].transcript || "";
     }
     if (ev.results[ev.results.length - 1].isFinal) heardInterim = "";
@@ -870,7 +877,7 @@ function startListening(){
         return;
       }
       flushHeard();
-    }, 1200);
+    }, gotFinal ? 800 : 1200);
   };
   rec.onend = () => {
     listening = false;
@@ -924,21 +931,36 @@ $("tVTest").addEventListener("click", () => {
 });
 
 let resumeKick = null;
+let speechQueue = [], speechActive = false;
 function speak(text, force){
   if ((!settings.speak && !force) || !window.speechSynthesis) return false;
-  speakLock = true;
+  const clean = String(text).replace(/\*\*|`/g, "").slice(0, 1200).trim();
+  if (!clean) return false;
+  if (speechActive){ speechQueue.push(clean); return true; }
+  speakLock = true; speechActive = true; speechQueue = [];
   if (rec && listening){ try{ rec.abort(); }catch(e){} }
-  const clean = text.replace(/\*\*|`/g, "").slice(0, 1200);
   lastReplyNorm = norm(clean);
+  speakNext(clean, true);
+  return true;
+}
+function speakNext(clean, first){
   const u = new SpeechSynthesisUtterance(clean);
   if (voice) u.voice = voice;
   u.rate = 1.02; u.pitch = 1;
   window._cherylUtt = u; /* Chrome GCs unreferenced utterances mid-speech */
-  let started = false, settled = false;
+  let started = false, settled = false, wdLong = null;
   const done = (ok) => {
     if (settled) return;
     settled = true;
     clearInterval(resumeKick); resumeKick = null;
+    clearTimeout(wdLong);
+    if (speechQueue.length){
+      const nxt = speechQueue.shift();
+      lastReplyNorm += " " + norm(nxt);
+      speakNext(nxt, false);
+      return;
+    }
+    speechActive = false;
     setVOut(ok ? "VOICE OUT: READY" : "VOICE OUT: BLOCKED - TAP TEST VOICE");
     if (!ok) logEvent("Voice output did not start");
     if (state === "speaking") setState("idle");
@@ -954,16 +976,21 @@ function speak(text, force){
     resumeKick = setInterval(() => {
       try{ if (speechSynthesis.speaking && !speechSynthesis.paused) speechSynthesis.resume(); }catch(e){}
     }, 5000);
+    /* hard cap: if onend never fires (Chrome stall), release the lock so listening resumes */
+    wdLong = setTimeout(() => {
+      if (!settled){ logEvent("Voice watchdog cleared a stuck utterance"); try{ speechSynthesis.cancel(); }catch(e){} done(true); }
+    }, 2000 + clean.length * 110);
   };
   u.onend = () => done(true);
   u.onerror = (e) => { logEvent("Voice error: " + (e && e.error || "unknown")); done(false); };
-  try{ speechSynthesis.cancel(); }catch(e){}
-  /* cancel() and speak() in the same tick silently drops the utterance on Chrome */
-  setTimeout(() => {
-    try{ speechSynthesis.speak(u); }catch(e){ done(false); }
-  }, 150);
+  if (first){
+    try{ speechSynthesis.cancel(); }catch(e){}
+    /* cancel() and speak() in the same tick silently drops the utterance on Chrome */
+    setTimeout(() => { try{ speechSynthesis.speak(u); }catch(e){ done(false); } }, 150);
+  } else {
+    setTimeout(() => { try{ speechSynthesis.speak(u); }catch(e){ done(false); } }, 40);
+  }
   setTimeout(() => { if (!started) done(false); }, 2500);
-  return true;
 }
 
 /* ---------- search ---------- */
@@ -1026,8 +1053,8 @@ async function askCheryl(onToken){
   const base = {messages: buildMessages(window._webCtx || null), model: "openai", reasoning_effort: "low"};
   const HEAD = {"Content-Type":"application/json"};
   const ctl = new AbortController();
-  let gotFirst = false;
-  const wd = setTimeout(() => { if(!gotFirst) ctl.abort(); }, 45000);
+  let gotFirst = false, partialText = "";
+  const wd = setTimeout(() => { if(!gotFirst) ctl.abort(); }, 25000);
   try{
     const res = await fetch(API, {method:"POST", headers:HEAD, body: JSON.stringify(Object.assign({}, base, {stream:true})), signal: ctl.signal});
     if (res.status === 429){ clearTimeout(wd); return {error:"Rate limited for a moment (free tier). Give it ten seconds and send again."}; }
@@ -1035,8 +1062,9 @@ async function askCheryl(onToken){
       const reader = res.body.getReader();
       const dec = new TextDecoder();
       let buf = "", text = "";
+      const readOnce = () => Promise.race([reader.read(), new Promise((_, rej) => setTimeout(() => rej(new Error("stream stall")), 15000))]);
       for(;;){
-        const {done, value} = await reader.read();
+        const {done, value} = await readOnce();
         if (done) break;
         gotFirst = true;
         buf += dec.decode(value, {stream:true});
@@ -1049,7 +1077,7 @@ async function askCheryl(onToken){
           try{
             const j = JSON.parse(data);
             const d = j.choices && j.choices[0] && j.choices[0].delta;
-            if (d && d.content){ text += d.content; onToken(text); }
+            if (d && d.content){ text += d.content; partialText = text; onToken(text); }
           }catch(e){}
         }
       }
@@ -1058,6 +1086,10 @@ async function askCheryl(onToken){
     }
   }catch(e){}
   clearTimeout(wd);
+  if (partialText.length > 40 && /[.!?]["')\]]?\s*$/.test(partialText)){
+    logEvent("Model stream stalled - using complete partial reply");
+    return {text: partialText};
+  }
   try{
     const r2 = await fetch(API, {method:"POST", headers:HEAD, body: JSON.stringify(base), signal: AbortSignal.timeout(60000)});
     if (r2.status === 429) return {error:"Rate limited for a moment (free tier). Give it ten seconds and send again."};
@@ -1110,6 +1142,18 @@ function weatherAnswer(q){
     ", humidity " + c.relative_humidity_2m + " percent. Today's high " + Math.round(d.temperature_2m_max[0]) +
     ", low " + Math.round(d.temperature_2m_min[0]) + ", rain chance " + (d.precipitation_probability_max[0] || 0) + " percent. Live from Open-Meteo.";
 }
+function timeAnswer(q){
+  const t = " " + q.toLowerCase().replace(/[^a-z ]/g, " ").replace(/\s+/g, " ") + " ";
+  const d = new Date();
+  if (t.indexOf(" what time ") !== -1 || t.indexOf(" time is it ") !== -1 || t.indexOf(" current time ") !== -1 || t.trim() === "time"){
+    let hh = d.getHours(); const mm = ("0" + d.getMinutes()).slice(-2), ap = hh >= 12 ? "PM" : "AM";
+    return "It's " + (hh % 12 || 12) + ":" + mm + " " + ap + ".";
+  }
+  if (t.indexOf(" what day ") !== -1 || t.indexOf(" what is the date ") !== -1 || t.indexOf(" what s the date ") !== -1 || t.indexOf(" today s date ") !== -1 || t.indexOf(" what date ") !== -1){
+    return "Today is " + d.toLocaleDateString("en-US", {weekday: "long", month: "long", day: "numeric", year: "numeric"}) + ".";
+  }
+  return null;
+}
 fetchWeather();
 setInterval(fetchWeather, 20 * 60 * 1000);
 
@@ -1126,13 +1170,13 @@ async function send(){
   history.push({role:"user", content:text});
   store.set("history", history);
   renderAll(); paintStats();
-  const wxA = weatherAnswer(text);
+  const wxA = timeAnswer(text) || weatherAnswer(text);
   if (wxA){
     history.push({role:"assistant", content:wxA});
     addMsg("cheryl", wxA, []);
     store.set("history", history);
     renderAll(); paintStats();
-    logEvent("Weather answered from live Open-Meteo cache", true);
+    logEvent("Answered locally - no model call", true);
     const spoke = speak(wxA);
     if (!spoke){ setState("idle"); if (settings.hf && activated && SR) startListening(); }
     busy = false; sendBtn.disabled = false;
@@ -1154,11 +1198,25 @@ async function send(){
   const bodyEl = addMsg("cheryl", "", []);
   bodyEl.classList.add("typing"); bodyEl.textContent = "Processing";
   const slowNote = setTimeout(() => { if (bodyEl.classList.contains("typing")) bodyEl.textContent = "Still working (free model, one moment)"; }, 20000);
+  let spokenUpTo = 0, spokeOk = false;
+  const pushSpeech = (full) => {
+    if (!settings.speak) return;
+    const re = /[.!?](?=\s|$)/g; re.lastIndex = spokenUpTo;
+    let m;
+    while ((m = re.exec(full)) !== null){
+      const end = m.index + 1;
+      if (end - spokenUpTo >= 15){
+        if (speak(full.slice(spokenUpTo, end).trim())) spokeOk = true;
+        spokenUpTo = end; re.lastIndex = spokenUpTo;
+      }
+    }
+  };
   const result = await askCheryl((partial) => {
     clearTimeout(slowNote);
     bodyEl.classList.remove("typing");
     bodyEl.innerHTML = mdLite(partial);
     scrollBottom();
+    pushSpeech(partial);
   });
   clearTimeout(slowNote);
   bodyEl.classList.remove("typing");
@@ -1176,8 +1234,11 @@ async function send(){
     respTimes.push(Math.round(secs * 10) / 10);
     store.set("respTimes", respTimes.slice(-24));
     logEvent("Reply in " + secs.toFixed(1) + "s - " + result.text.length + " chars", true);
-    const spoke = speak(result.text);
-    if (!spoke){ setState("idle"); if (settings.hf && activated && SR) startListening(); }
+    if (settings.speak){
+      const rest = result.text.slice(spokenUpTo).trim();
+      if (rest && speak(rest)) spokeOk = true;
+    }
+    if (!spokeOk){ setState("idle"); if (settings.hf && activated && SR) startListening(); }
   }
   store.set("history", history);
   renderAll(); paintStats();
@@ -1198,6 +1259,10 @@ $("composer").addEventListener("submit", (e) => { e.preventDefault(); send(); })
 
 /* ---------- boot ---------- */
 paintSettings();
+/* if mic permission was already granted, start listening immediately on load (no tap needed) */
+if (settings.hf && SR){
+  try{ startListening(); logEvent("Auto-armed listening on load"); }catch(e){}
+}
 paintStats();
 renderAll();
 logEvent("Cheryl-OS 0.2 online - core ready", true);
