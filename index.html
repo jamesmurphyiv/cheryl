@@ -1868,15 +1868,18 @@ function wakeEnter(manual){
   if (manual) return; /* manual open: he taps the big button himself */
   wkRun(); /* alarm profile launches with autoplay allowed */
 }
-$("wkSave").addEventListener("click", () => {
-  localStorage.setItem("cheryl_wake", $("wkTime").value);
-  $("wkState").textContent = $("wkTime").value + " SAVED";
-});
-$("wkStart").addEventListener("click", () => { activated = true; store.set("activated", 1); wkRun(); });
-$("wkClose").addEventListener("click", () => { $("wakeOv").classList.remove("open"); clearInterval(wkTimer); });
-$("wakeBtn").addEventListener("click", () => wakeEnter(true));
+/* wake markup renders after this script - bind once the DOM is complete */
+document.addEventListener("DOMContentLoaded", () => {
+  $("wkSave").addEventListener("click", () => {
+    localStorage.setItem("cheryl_wake", $("wkTime").value);
+    $("wkState").textContent = $("wkTime").value + " SAVED";
+  });
+  $("wkStart").addEventListener("click", () => { activated = true; store.set("activated", 1); wkRun(); });
+  $("wkClose").addEventListener("click", () => { $("wakeOv").classList.remove("open"); clearInterval(wkTimer); });
+  $("wakeBtn").addEventListener("click", () => wakeEnter(true));
 
-if (/[?&]wake=1/.test(location.search)) setTimeout(() => wakeEnter(false), 800);
+  if (/[?&]wake=1/.test(location.search)) setTimeout(() => wakeEnter(false), 800);
+});
 </script>
 <style id="hudStyle">
 html,body{overflow:hidden!important;height:100dvh}
