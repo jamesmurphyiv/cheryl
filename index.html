@@ -369,6 +369,12 @@ main.minmain{max-width:680px;margin:0 auto;padding:14px 16px 26px;display:flex;f
     <button class="chipbtn" id="tKeySave">Save key - this device only</button>
     <button class="chipbtn" id="tKeyClear">Clear key</button>
     <div class="tap" id="keyStat" style="font-family:var(--hud);font-size:9px;color:var(--dim2);letter-spacing:.1em">BRAIN: GPT-OSS-20B - POLLINATIONS</div>
+    <h3 style="margin-top:14px">Her real voice - optional (Noiz)</h3>
+    <input id="noizKey" type="password" placeholder="Paste Noiz API key" autocomplete="off" style="width:100%;background:#0a0e12;border:1px solid #22303a;color:#7fd6f2;font-family:var(--hud);font-size:10px;letter-spacing:.05em;padding:8px;border-radius:6px">
+    <input id="noizVoice" type="text" placeholder="Noiz voice ID" autocomplete="off" style="width:100%;margin-top:6px;background:#0a0e12;border:1px solid #22303a;color:#7fd6f2;font-family:var(--hud);font-size:10px;letter-spacing:.05em;padding:8px;border-radius:6px">
+    <button class="chipbtn" id="tNoizSave">Save voice - this device only</button>
+    <button class="chipbtn" id="tNoizClear">Clear voice</button>
+    <div class="tap" id="noizStat" style="font-family:var(--hud);font-size:9px;color:var(--dim2);letter-spacing:.1em">VOICE: BROWSER DEFAULT</div>
   </div>
 </div>
 <script src="unisphere-b64.js"></script>
@@ -1131,8 +1137,9 @@ function startListening(){
     if (meterShedForRec){ meterShedForRec = false; logEvent("Ears OK - level meter stays paused (mic is shared)", true); }
   };
   rec.onresult = (ev) => {
-    if (window.speechSynthesis && speechSynthesis.speaking && speakLock) return;
+    if ((window.speechSynthesis && speechSynthesis.speaking && speakLock) || (window._cherylAudio && speakLock)) return;
     if (window.speechSynthesis && speechSynthesis.speaking && !speakLock){ try{ speechSynthesis.cancel(); }catch(e){} }
+    if (window._cherylAudio && !speakLock) killNoizAudio();
     let gotFinal = false;
     for (let i = ev.resultIndex; i < ev.results.length; i++){
       const r = ev.results[i];
@@ -1267,6 +1274,7 @@ window.addEventListener("keydown", (e) => {
   if (listening || convOpen()){
     convUntil = 0; heard = ""; heardInterim = ""; pendingVoice = "";
     try{ if (window.speechSynthesis) speechSynthesis.cancel(); }catch(err){}
+    killNoizAudio();
     if (listening){ try{ rec.stop(); }catch(err){} }
     setState("idle");
     logEvent("Conversation closed - spacebar");
@@ -1312,6 +1320,25 @@ $("tKeyClear").addEventListener("click", () => {
   paintModel(); logEvent("Groq key cleared - back to the no-key free model");
 });
 
+let noizKey = store.get("noizKey", ""), noizVoice = store.get("noizVoice", "");
+function paintNoiz(){
+  const el = $("noizStat"); if (el) el.textContent = "VOICE: " + ((noizKey && noizVoice) ? "NOIZ CUSTOM - THIS DEVICE" : "BROWSER DEFAULT");
+}
+$("tNoizSave").addEventListener("click", () => {
+  const k = $("noizKey").value.trim(), v = $("noizVoice").value.trim();
+  if (!k || !v) return;
+  noizKey = k; noizVoice = v; store.set("noizKey", k); store.set("noizVoice", v);
+  $("noizKey").value = ""; $("noizVoice").value = ""; paintNoiz();
+  logEvent("Noiz voice connected - saved on this device only", true);
+});
+$("tNoizClear").addEventListener("click", () => {
+  noizKey = ""; noizVoice = ""; store.set("noizKey", ""); store.set("noizVoice", "");
+  paintNoiz(); logEvent("Noiz voice cleared - back to the browser voice");
+});
+function killNoizAudio(){
+  if (window._cherylAudio){ try{ window._cherylAudio.pause(); }catch(e){} window._cherylAudio = null; }
+}
+
 let resumeKick = null;
 let speechQueue = [], speechActive = false;
 function speak(text, force){
@@ -1326,11 +1353,7 @@ function speak(text, force){
   return true;
 }
 function speakNext(clean, first){
-  const u = new SpeechSynthesisUtterance(clean);
-  if (voice) u.voice = voice;
-  u.rate = 1.02; u.pitch = 1;
-  window._cherylUtt = u; /* Chrome GCs unreferenced utterances mid-speech */
-  let started = false, settled = false, wdLong = null;
+  let started = false, settled = false, wdLong = null, noizEl = null;
   const done = (ok) => {
     if (settled) return;
     settled = true;
@@ -1352,7 +1375,7 @@ function speakNext(clean, first){
       setTimeout(() => { if (!busy && !speakLock) startListening(); }, 700);
     }
   };
-  u.onstart = () => {
+  const onStart = () => {
     started = true; setState("speaking"); setVOut("VOICE OUT: SPEAKING");
     /* Chrome desktop stalls long utterances after ~15s; resume() kicks it */
     clearInterval(resumeKick);
@@ -1364,16 +1387,45 @@ function speakNext(clean, first){
       if (!settled){ logEvent("Voice watchdog cleared a stuck utterance"); try{ speechSynthesis.cancel(); }catch(e){} done(true); }
     }, 2000 + clean.length * 110);
   };
-  u.onend = () => done(true);
-  u.onerror = (e) => { logEvent("Voice error: " + (e && e.error || "unknown")); done(false); };
-  if (first){
-    try{ speechSynthesis.cancel(); }catch(e){}
-    /* cancel() and speak() in the same tick silently drops the utterance on Chrome */
-    setTimeout(() => { try{ speechSynthesis.speak(u); }catch(e){ done(false); } }, 150);
-  } else {
-    setTimeout(() => { try{ speechSynthesis.speak(u); }catch(e){ done(false); } }, 40);
+  const useBrowser = () => {
+    const u = new SpeechSynthesisUtterance(clean);
+    if (voice) u.voice = voice;
+    u.rate = 1.02; u.pitch = 1;
+    window._cherylUtt = u; /* Chrome GCs unreferenced utterances mid-speech */
+    u.onstart = onStart;
+    u.onend = () => done(true);
+    u.onerror = (e) => { logEvent("Voice error: " + (e && e.error || "unknown")); done(false); };
+    if (first){
+      try{ speechSynthesis.cancel(); }catch(e){}
+      /* cancel() and speak() in the same tick silently drops the utterance on Chrome */
+      setTimeout(() => { try{ speechSynthesis.speak(u); }catch(e){ done(false); } }, 150);
+    } else {
+      setTimeout(() => { try{ speechSynthesis.speak(u); }catch(e){ done(false); } }, 40);
+    }
+    setTimeout(() => { if (!started) done(false); }, 2500);
+  };
+  if (noizKey && noizVoice){
+    (async () => {
+      try{
+        try{ speechSynthesis.cancel(); }catch(e){}
+        const r = await fetch("/tts", {method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({text: clean, voice_id: noizVoice, key: noizKey, speed: 1})});
+        if (!r.ok) throw new Error("tts " + r.status);
+        noizEl = new Audio(URL.createObjectURL(await r.blob()));
+        window._cherylAudio = noizEl;
+        noizEl.onplaying = onStart;
+        noizEl.onended = () => { killNoizAudio(); done(true); };
+        noizEl.onerror = () => { if (!settled){ logEvent("Noiz playback failed - browser voice"); killNoizAudio(); useBrowser(); } };
+        await noizEl.play();
+      }catch(e){
+        if (!settled){ logEvent("Noiz TTS unavailable (" + (e && e.message || e) + ") - browser voice"); killNoizAudio(); useBrowser(); }
+      }
+    })();
+    /* Noiz synthesis can take seconds - fall back if nothing sounds in 15s */
+    setTimeout(() => { if (!started && !settled){ logEvent("Noiz TTS timed out - browser voice"); killNoizAudio(); useBrowser(); } }, 15000);
+    return;
   }
-  setTimeout(() => { if (!started) done(false); }, 2500);
+  useBrowser();
 }
 
 /* ---------- search ---------- */
@@ -1711,6 +1763,7 @@ if (settings.hf && SR){
   try{ startListening(); logEvent("Auto-armed listening on load"); }catch(e){}
 }
 paintModel();
+paintNoiz();
 paintStats();
 renderAll();
 logEvent("Cheryl-OS 0.2 online - core ready", true);
