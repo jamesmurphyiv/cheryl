@@ -115,6 +115,31 @@ export default {
       });
     }
 
+    // Noiz TTS relay: the browser cannot call noiz.ai directly (no CORS headers),
+    // so the worker forwards it. The API key arrives per request from the device's
+    // localStorage - it is never stored here and never in the repo.
+    if (url.pathname === "/tts" && request.method === "POST"){
+      if (!authed) return new Response("locked", { status: 401 });
+      let body;
+      try { body = await request.json(); } catch (e) { return new Response("bad json", { status: 400 }); }
+      const text = String(body.text || "").slice(0, 5000);
+      const vid = String(body.voice_id || ""), key = String(body.key || "");
+      const speed = Math.min(2, Math.max(0.5, Number(body.speed) || 1));
+      if (!text || !vid || !key) return new Response("missing fields", { status: 400 });
+      const fd = new FormData();
+      fd.append("text", text);
+      fd.append("voice_id", vid);
+      fd.append("output_format", "mp3");
+      fd.append("speed", String(speed));
+      const r = await fetch("https://noiz.ai/v1/text-to-speech", {
+        method: "POST", headers: { Authorization: key }, body: fd,
+      });
+      const h = new Headers();
+      h.set("Content-Type", r.ok ? (r.headers.get("Content-Type") || "audio/mpeg") : "application/json");
+      h.set("Cache-Control", "no-store");
+      return new Response(r.body, { status: r.status, headers: h });
+    }
+
     // Rolling 30-day cookie: every authed visit re-issues it, so the alarm
     // profile stays unlocked as long as the alarm keeps firing.
     if (authed){
