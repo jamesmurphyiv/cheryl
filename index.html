@@ -1781,7 +1781,7 @@ function wkSpeak(text){
     if (!window.speechSynthesis){ res(false); return; }
     const u = new SpeechSynthesisUtterance(text);
     if (voice) u.voice = voice;
-    u.rate = 1.02; u.pitch = 1;
+    u.rate = 1.25; u.pitch = 1;
     window._cherylUtt = u;
     let done = false, started = false;
     const fin = () => { if (done) return; done = true; clearTimeout(wd); res(started); };
