@@ -1744,46 +1744,33 @@ async function wkWeather(){
     hi: Math.round(j.daily.temperature_2m_max[0]), lo: Math.round(j.daily.temperature_2m_min[0]),
     rain: (j.daily.precipitation_probability_max && j.daily.precipitation_probability_max[0]) || 0};
 }
-/* news: Wikipedia Current events (today's page) + NPR top stories; BBC World as fallback */
-async function wkWiki(){
-  const d = new Date(), mo = d.toLocaleDateString("en-US", {month:"long"});
-  const page = "Portal:Current_events/" + d.getFullYear() + "_" + mo + "_" + d.getDate();
-  const u = "https://en.wikipedia.org/w/api.php?action=parse&format=json&formatversion=2&origin=*&prop=text&page=" + encodeURIComponent(page);
-  const j = await (await fetch(u, {signal: AbortSignal.timeout(8000), cache: "no-store"})).json();
-  const html = j && j.parse && j.parse.text;
-  if (!html) throw new Error("wiki wire down");
-  const doc = new DOMParser().parseFromString(html, "text/html");
-  const out = [];
-  doc.querySelectorAll("li").forEach(li => {
-    if (out.length >= 2) return;
-    li.querySelectorAll("sup,style,script").forEach(s => s.remove());
-    let n = li.firstChild;
-    while (n){
-      if (n.nodeType === 3 && !n.textContent.replace(/[\s,;\u2013-]/g, "")){ n = n.nextSibling; continue; }
-      if (n.nodeName === "A"){ const nx = n.nextSibling; n.remove(); n = nx; continue; }
-      break;
-    }
-    const t = li.textContent.replace(/\s+/g, " ").replace(/^[\s,;\u2013-]+/, "").trim();
-    if (t.length > 40 && !/^(edit|history|watch)\b/i.test(t) && out.indexOf(t) < 0) out.push(t.length > 220 ? t.slice(0, 217) + "..." : t);
-  });
-  if (!out.length) throw new Error("wiki empty");
-  return out;
+/* news: Wikipedia Current events (today's page) + BBC World via rss2json sorted by pubDate desc; either fills if the other fails */
+async function wkWikiNews(n){
+  const now = new Date(), mon = now.toLocaleDateString("en-US", {month:"long"}), day = now.getDate(), yr = now.getFullYear();
+  const page = encodeURIComponent("Portal:Current_events/" + yr + "_" + mon + "_" + day);
+  const j = await (await fetch("https://en.wikipedia.org/w/api.php?action=parse&page=" + page + "&prop=text&format=json&origin=*", {signal: AbortSignal.timeout(8000), cache: "no-store"})).json();
+  if (!j.parse) throw new Error("wiki down");
+  const doc = new DOMParser().parseFromString(j.parse.text["*"], "text/html");
+  const items = [...doc.querySelectorAll("li")].filter(li => !li.querySelector("li"))
+    .map(li => li.textContent.replace(/\([^)]*\)\s*$/, "").replace(/\s+/g, " ").trim())
+    .filter(t => t.length > 45);
+  return items.slice(0, n);
 }
-async function wkNPR(){
-  const feed = encodeURIComponent("https://feeds.npr.org/1001/rss.xml");
-  const j = await (await fetch("https://api.rss2json.com/v1/api.json?rss_url=" + feed, {signal: AbortSignal.timeout(8000), cache: "no-store"})).json();
-  if (j.status !== "ok") throw new Error("npr wire down");
-  return j.items.slice(0, 2).map(i => i.title);
-}
-async function wkNews(){
-  const parts = [];
-  try{ parts.push(...await wkWiki()); }catch(e){}
-  try{ parts.push(...await wkNPR()); }catch(e){}
-  if (parts.length) return parts.slice(0, 3);
+async function wkBBCNews(n){
   const feed = encodeURIComponent("https://feeds.bbci.co.uk/news/world/rss.xml");
   const j = await (await fetch("https://api.rss2json.com/v1/api.json?rss_url=" + feed, {signal: AbortSignal.timeout(8000), cache: "no-store"})).json();
-  if (j.status !== "ok") throw new Error("news wires down");
-  return j.items.slice(0, 3).map(i => i.title);
+  if (j.status !== "ok") throw new Error("news wire down");
+  return j.items.filter(i => i.pubDate).sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate)).slice(0, n).map(i => i.title);
+}
+async function wkNews(){
+  const out = [];
+  try{ out.push(...(await wkWikiNews(2)).map(t => ({src:"Wikipedia current events", t}))); }catch(e){}
+  try{ out.push(...(await wkBBCNews(3 - out.length)).map(t => ({src:"BBC", t}))); }catch(e){}
+  if (out.length < 2){ /* one source failed entirely - fill from the other */
+    try{ if (!out.length) out.push(...(await wkBBCNews(3)).map(t => ({src:"BBC", t}))); }catch(e){}
+  }
+  if (!out.length) throw new Error("news wires down");
+  return out.slice(0, 3);
 }
 function wkCal(){
   if (Array.isArray(window.CHERYL_EVENTS)) return window.CHERYL_EVENTS;
@@ -1803,9 +1790,9 @@ async function wkBuildLines(){
   }catch(e){ lines.push({k:"WEATHER", t:"Weather wire unreachable right now."}); }
   try{
     const news = await wkNews();
-    lines.push({k:"IN THE WORLD", t: news.map((x, i) => (i + 1) + ". " + x).join("<br>"),
-      speak: "Here is what is going on in the world. " + news.map(x => x.replace(/&/g, "and")).join(". ") + "."});
-  }catch(e){ lines.push({k:"IN THE WORLD", t:"News wire unreachable right now."}); }
+    lines.push({k:"IN THE WORLD", t: news.map((x, i) => (i + 1) + ". " + x.t + ' <span style="color:#4f7282;font-size:10px">' + x.src.toUpperCase() + "</span>").join("<br>"),
+      speak: "Here is what is going on in the world. " + news.map(x => x.t.replace(/&/g, "and")).join(". ") + "."});
+  }catch(e){ lines.push({k:"IN THE WORLD", t:"News wires unreachable right now."}); }
   const cal = wkCal();
   if (cal && cal.length) lines.push({k:"IN YOUR WORLD", t: cal.join("<br>"), speak: "And in your world today: " + cal.join(". ") + "."});
   else if (cal) lines.push({k:"IN YOUR WORLD", t:"Your calendar is clear today. Wide open.", speak:"And in your world: your calendar is clear today. Wide open."});
