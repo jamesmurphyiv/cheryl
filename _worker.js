@@ -101,7 +101,83 @@ export default {
     }
 
     const cookies = parseCookies(request.headers.get("Cookie"));
-    if (cookies["cherylx_gate"] === expected) return env.ASSETS.fetch(request);
+    const authed = cookies["cherylx_gate"] === expected;
+
+    // Licensed wake-up song: served only behind the gate, out of KV.
+    // The file is never in the repo, so the public GitHub Pages mirror has no copy.
+    if (url.pathname === "/wake-audio"){
+      if (!authed) return new Response("locked", { status: 401 });
+      if (!env.AUDIO) return new Response("audio not configured", { status: 404 });
+      const buf = await env.AUDIO.get("clash-should-i-stay", "arrayBuffer");
+      if (!buf) return new Response("song missing", { status: 404 });
+      return new Response(buf, {
+        headers: { "Content-Type": "audio/mpeg", "Cache-Control": "no-store", "Content-Length": String(buf.byteLength) },
+      });
+    }
+
+    // Which provider keys live server-side (Cloudflare secrets). The page uses
+    // this at boot to show "SERVER, EVERY DEVICE" status lines and to route
+    // brain/voice calls through the worker when the device has no key of its own.
+    if (url.pathname === "/key-status"){
+      if (!authed) return new Response("locked", { status: 401 });
+      return new Response(JSON.stringify({
+        groq: !!env.GROQ_KEY,
+        noiz: !!(env.NOIZ_KEY && env.NOIZ_VOICE),
+      }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+    }
+
+    // Groq brain relay: same request shape the browser sends to Groq directly,
+    // forwarded with the server key when the device has none. Streamed when asked.
+    if (url.pathname === "/brain" && request.method === "POST"){
+      if (!authed) return new Response("locked", { status: 401 });
+      if (!env.GROQ_KEY) return new Response("server groq key not configured", { status: 503 });
+      let raw;
+      try { raw = await request.text(); } catch (e) { return new Response("bad body", { status: 400 }); }
+      const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + env.GROQ_KEY },
+        body: raw,
+      });
+      const h = new Headers();
+      h.set("Content-Type", r.headers.get("Content-Type") || "application/json");
+      h.set("Cache-Control", "no-store");
+      return new Response(r.body, { status: r.status, headers: h });
+    }
+
+    // Noiz TTS relay: the browser cannot call noiz.ai directly (no CORS headers),
+    // so the worker forwards it. Device key/voice (from localStorage) win when sent;
+    // otherwise it falls back to the server-side NOIZ_KEY / NOIZ_VOICE secrets.
+    if (url.pathname === "/tts" && request.method === "POST"){
+      if (!authed) return new Response("locked", { status: 401 });
+      let body;
+      try { body = await request.json(); } catch (e) { return new Response("bad json", { status: 400 }); }
+      const text = String(body.text || "").slice(0, 5000);
+      const vid = String(body.voice_id || "") || String(env.NOIZ_VOICE || "");
+      const key = String(body.key || "") || String(env.NOIZ_KEY || "");
+      const speed = Math.min(2, Math.max(0.5, Number(body.speed) || 1));
+      if (!text || !vid || !key) return new Response("missing fields", { status: text && (!vid || !key) ? 503 : 400 });
+      const fd = new FormData();
+      fd.append("text", text);
+      fd.append("voice_id", vid);
+      fd.append("output_format", "mp3");
+      fd.append("speed", String(speed));
+      const r = await fetch("https://noiz.ai/v1/text-to-speech", {
+        method: "POST", headers: { Authorization: key }, body: fd,
+      });
+      const h = new Headers();
+      h.set("Content-Type", r.ok ? (r.headers.get("Content-Type") || "audio/mpeg") : "application/json");
+      h.set("Cache-Control", "no-store");
+      return new Response(r.body, { status: r.status, headers: h });
+    }
+
+    // Rolling 30-day cookie: every authed visit re-issues it, so the alarm
+    // profile stays unlocked as long as the alarm keeps firing.
+    if (authed){
+      const resp = await env.ASSETS.fetch(request);
+      const r = new Response(resp.body, resp);
+      r.headers.append("Set-Cookie", `cherylx_gate=${expected}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000`);
+      return r;
+    }
 
     return loginPage();
   },
