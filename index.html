@@ -1744,10 +1744,45 @@ async function wkWeather(){
     hi: Math.round(j.daily.temperature_2m_max[0]), lo: Math.round(j.daily.temperature_2m_min[0]),
     rain: (j.daily.precipitation_probability_max && j.daily.precipitation_probability_max[0]) || 0};
 }
+/* news: Wikipedia Current events (today's page) + NPR top stories; BBC World as fallback */
+async function wkWiki(){
+  const d = new Date(), mo = d.toLocaleDateString("en-US", {month:"long"});
+  const page = "Portal:Current_events/" + d.getFullYear() + "_" + mo + "_" + d.getDate();
+  const u = "https://en.wikipedia.org/w/api.php?action=parse&format=json&formatversion=2&origin=*&prop=text&page=" + encodeURIComponent(page);
+  const j = await (await fetch(u, {signal: AbortSignal.timeout(8000), cache: "no-store"})).json();
+  const html = j && j.parse && j.parse.text;
+  if (!html) throw new Error("wiki wire down");
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const out = [];
+  doc.querySelectorAll("li").forEach(li => {
+    if (out.length >= 2) return;
+    li.querySelectorAll("sup,style,script").forEach(s => s.remove());
+    let n = li.firstChild;
+    while (n){
+      if (n.nodeType === 3 && !n.textContent.replace(/[\s,;\u2013-]/g, "")){ n = n.nextSibling; continue; }
+      if (n.nodeName === "A"){ const nx = n.nextSibling; n.remove(); n = nx; continue; }
+      break;
+    }
+    const t = li.textContent.replace(/\s+/g, " ").replace(/^[\s,;\u2013-]+/, "").trim();
+    if (t.length > 40 && !/^(edit|history|watch)\b/i.test(t) && out.indexOf(t) < 0) out.push(t.length > 220 ? t.slice(0, 217) + "..." : t);
+  });
+  if (!out.length) throw new Error("wiki empty");
+  return out;
+}
+async function wkNPR(){
+  const feed = encodeURIComponent("https://feeds.npr.org/1001/rss.xml");
+  const j = await (await fetch("https://api.rss2json.com/v1/api.json?rss_url=" + feed, {signal: AbortSignal.timeout(8000), cache: "no-store"})).json();
+  if (j.status !== "ok") throw new Error("npr wire down");
+  return j.items.slice(0, 2).map(i => i.title);
+}
 async function wkNews(){
+  const parts = [];
+  try{ parts.push(...await wkWiki()); }catch(e){}
+  try{ parts.push(...await wkNPR()); }catch(e){}
+  if (parts.length) return parts.slice(0, 3);
   const feed = encodeURIComponent("https://feeds.bbci.co.uk/news/world/rss.xml");
   const j = await (await fetch("https://api.rss2json.com/v1/api.json?rss_url=" + feed, {signal: AbortSignal.timeout(8000), cache: "no-store"})).json();
-  if (j.status !== "ok") throw new Error("news wire down");
+  if (j.status !== "ok") throw new Error("news wires down");
   return j.items.slice(0, 3).map(i => i.title);
 }
 function wkCal(){
