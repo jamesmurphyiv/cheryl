@@ -1028,6 +1028,7 @@ function setState(s){
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null, listening = false;
 let voice = null;
+let voiceRetries = 0;
 function pickVoice(){
   if (!window.speechSynthesis) return;
   const vs = speechSynthesis.getVoices().filter(v => v.lang && v.lang.toLowerCase().startsWith("en"));
@@ -1280,6 +1281,22 @@ document.addEventListener("visibilitychange", () => {
 });
 /* safety net: if every restart path dropped the ball, re-assert the ears */
 setInterval(() => { if (voiceWanted() && !listening && !restartTimer) scheduleRestart(50); }, 2500);
+/* Mac Chrome wedge: speechSynthesis silently dies (no onstart/onend ever fire) and speakLock never
+   releases - voice and mic both look dead until a tab restart. Two stuck ticks with nothing actually
+   speaking or queued -> force-release the lock so the next reply re-arms the engine. */
+let speakStuckTicks = 0;
+setInterval(() => {
+  if (speakLock && !(window.speechSynthesis && (speechSynthesis.speaking || speechSynthesis.pending))) speakStuckTicks++;
+  else speakStuckTicks = 0;
+  if (speakStuckTicks >= 2){
+    speakStuckTicks = 0;
+    logEvent("Voice engine wedge detected - force-releasing the speech lock");
+    try{ speechSynthesis.cancel(); }catch(e){}
+    speakLock = false; speechActive = false; speechQueue = [];
+    if (state === "speaking" || (state === "thinking" && !busy)) setState("idle");
+    flushPending();
+  }
+}, 4000);
 /* once he has armed the mic on a visit, later visits try to start it on load;
    browsers that demand a fresh gesture fall back to the tap-to-arm note */
 let autoArming = false;
@@ -1317,7 +1334,7 @@ function speak(text, force){
   const clean = String(text).replace(/\*\*|`/g, "").slice(0, 1200).trim();
   if (!clean) return false;
   if (speechActive){ speechQueue.push(clean); return true; }
-  speakLock = true; speechActive = true; speechQueue = [];
+  speakLock = true; speechActive = true; speechQueue = []; voiceRetries = 0;
   if (rec && listening){ try{ rec.abort(); }catch(e){} }
   lastReplyNorm = norm(clean);
   speakNext(clean, true);
@@ -1364,14 +1381,35 @@ function speakNext(clean, first){
   };
   u.onend = () => done(true);
   u.onerror = (e) => { logEvent("Voice error: " + (e && e.error || "unknown")); done(false); };
+  const fire = () => {
+    try{ speechSynthesis.resume(); }catch(e){} /* Mac Chrome parks the speech queue paused; resume unsticks it */
+    /* re-resolve the voice at speak time: a cached SpeechSynthesisVoice goes stale on Mac Chrome and speak() silently never starts */
+    try{
+      if (voice){
+        const fresh = speechSynthesis.getVoices().find(v => v.name === voice.name && v.lang === voice.lang);
+        u.voice = fresh || null;
+      }
+    }catch(e){}
+    try{ speechSynthesis.speak(u); }catch(e){ done(false); }
+  };
   if (first){
     try{ speechSynthesis.cancel(); }catch(e){}
     /* cancel() and speak() in the same tick silently drops the utterance on Chrome */
-    setTimeout(() => { try{ speechSynthesis.speak(u); }catch(e){ done(false); } }, 150);
+    setTimeout(fire, 150);
   } else {
-    setTimeout(() => { try{ speechSynthesis.speak(u); }catch(e){ done(false); } }, 40);
+    setTimeout(fire, 40);
   }
-  setTimeout(() => { if (!started) done(false); }, 2500);
+  setTimeout(() => {
+    if (!started && !settled){
+      if (voiceRetries < 2){
+        voiceRetries++;
+        logEvent("Voice did not start - re-arming the speech engine");
+        try{ speechSynthesis.cancel(); }catch(e){}
+        settled = true; /* this utterance is dead; a fresh one takes over below */
+        setTimeout(() => speakNext(clean, first), 350);
+      } else done(false);
+    }
+  }, 2500);
 }
 
 /* ---------- search ---------- */
