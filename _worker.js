@@ -101,7 +101,28 @@ export default {
     }
 
     const cookies = parseCookies(request.headers.get("Cookie"));
-    if (cookies["cherylx_gate"] === expected) return env.ASSETS.fetch(request);
+    const authed = cookies["cherylx_gate"] === expected;
+
+    // Licensed wake-up song: served only behind the gate, out of KV.
+    // The file is never in the repo, so the public GitHub Pages mirror has no copy.
+    if (url.pathname === "/wake-audio"){
+      if (!authed) return new Response("locked", { status: 401 });
+      if (!env.AUDIO) return new Response("audio not configured", { status: 404 });
+      const buf = await env.AUDIO.get("clash-should-i-stay", "arrayBuffer");
+      if (!buf) return new Response("song missing", { status: 404 });
+      return new Response(buf, {
+        headers: { "Content-Type": "audio/mpeg", "Cache-Control": "no-store", "Content-Length": String(buf.byteLength) },
+      });
+    }
+
+    // Rolling 30-day cookie: every authed visit re-issues it, so the alarm
+    // profile stays unlocked as long as the alarm keeps firing.
+    if (authed){
+      const resp = await env.ASSETS.fetch(request);
+      const r = new Response(resp.body, resp);
+      r.headers.append("Set-Cookie", `cherylx_gate=${expected}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000`);
+      return r;
+    }
 
     return loginPage();
   },
