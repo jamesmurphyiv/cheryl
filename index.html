@@ -854,7 +854,7 @@ const SYSTEM = [
 "=== MEMORY FILE ==="
 ].join("\n");
 
-const GREETING = "James. Cheryl online. The mic stays on while this page is open - say my name to open a conversation, or tap the spacebar to open and close it. Green tally means I am listening, red means I am not. Weather is live Open-Meteo for Wellington. My memory file is under Memory in the nav - read it, edit it, it stays on this device.";
+const GREETING = "James. Cheryl online. The mic stays on while this page is open - say my name to open a conversation, or tap the spacebar to switch my ears off and on. Green tally means I am listening, red means I am not. Weather is live Open-Meteo for Wellington. My memory file is under Memory in the nav - read it, edit it, it stays on this device.";
 
 const QUICK = [];
 
@@ -1029,6 +1029,7 @@ const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null, listening = false;
 let voice = null;
 let voiceRetries = 0;
+let voiceDefaulted = false; /* set when the picked voice proves silent/broken on this machine: stay on the system default voice for the session */
 function pickVoice(){
   if (!window.speechSynthesis) return;
   const vs = speechSynthesis.getVoices().filter(v => v.lang && v.lang.toLowerCase().startsWith("en"));
@@ -1256,7 +1257,8 @@ $("tVTest").addEventListener("click", () => {
   logEvent("Voice self-test");
   speak("Voice check. Cheryl can hear you and answers out loud.", true);
 });
-/* spacebar opens/closes the conversation (when not typing) */
+/* spacebar is a listening on/off switch (when not typing): tap = ears off and they STAY off,
+   tap again = ears on and the conversation opens so the next thing you say is heard */
 window.addEventListener("keydown", (e) => {
   if (e.code !== "Space" || e.repeat) return;
   const ae = document.activeElement;
@@ -1264,15 +1266,19 @@ window.addEventListener("keydown", (e) => {
   e.preventDefault();
   activated = true; store.set("activated", 1);
   if (listening || convOpen()){
+    manualStop = true;
     convUntil = 0; heard = ""; heardInterim = ""; pendingVoice = "";
     try{ if (window.speechSynthesis) speechSynthesis.cancel(); }catch(err){}
     if (listening){ try{ rec.stop(); }catch(err){} }
+    window.__micMeterWanted = false; if (window.__micMeter) window.__micMeter.stop();
     setState("idle");
-    logEvent("Conversation closed - spacebar");
+    logEvent("Listening off - spacebar");
   } else {
+    manualStop = false;
     convExtend();
-    logEvent("Conversation opened - spacebar");
+    window.__micMeterWanted = true; if (window.__micMeter) window.__micMeter.start();
     startListening();
+    logEvent("Listening on - spacebar");
   }
 });
 /* mic resumes whenever the page is visible again */
@@ -1342,10 +1348,21 @@ function speak(text, force){
 }
 function speakNext(clean, first){
   const u = new SpeechSynthesisUtterance(clean);
-  if (voice) u.voice = voice;
+  if (voice && !voiceDefaulted) u.voice = voice;
   u.rate = 1.02; u.pitch = 1;
   window._cherylUtt = u; /* Chrome GCs unreferenced utterances mid-speech */
-  let started = false, settled = false, wdLong = null;
+  let started = false, settled = false, wdLong = null, startedAt = 0, spokenVoice = "";
+  const dropVoice = (why) => {
+    if (voiceDefaulted || !voice) return false;
+    voiceDefaulted = true;
+    clearInterval(resumeKick); resumeKick = null;
+    clearTimeout(wdLong);
+    logEvent("Voice '" + voice.name + "' " + why + " on this machine - switched to the default voice");
+    voice = null;
+    settled = true; /* this utterance is dead; re-speak with the default voice */
+    setTimeout(() => speakNext(clean, first), 250);
+    return true;
+  };
   const done = (ok) => {
     if (settled) return;
     settled = true;
@@ -1368,7 +1385,8 @@ function speakNext(clean, first){
     }
   };
   u.onstart = () => {
-    started = true; setState("speaking"); setVOut("VOICE OUT: SPEAKING");
+    started = true; startedAt = Date.now(); setState("speaking");
+    setVOut("VOICE OUT: SPEAKING - " + (spokenVoice || "DEFAULT"));
     /* Chrome desktop stalls long utterances after ~15s; resume() kicks it */
     clearInterval(resumeKick);
     resumeKick = setInterval(() => {
@@ -1379,16 +1397,32 @@ function speakNext(clean, first){
       if (!settled){ logEvent("Voice watchdog cleared a stuck utterance"); try{ speechSynthesis.cancel(); }catch(e){} done(true); }
     }, 2000 + clean.length * 110);
   };
-  u.onend = () => done(true);
-  u.onerror = (e) => { logEvent("Voice error: " + (e && e.error || "unknown")); done(false); };
+  u.onend = () => {
+    /* Mac Chrome silent-voice signature: onstart fires, then onend lands far too soon for the
+       text length (nothing was actually synthesized). Only judge longer texts; short ones
+       legitimately end fast. */
+    if (started && clean.length > 40 && startedAt && (Date.now() - startedAt) < 300 + clean.length * 25){
+      if (dropVoice("played silently")) return;
+    }
+    done(true);
+  };
+  u.onerror = (e) => {
+    const err = (e && e.error) || "unknown";
+    logEvent("Voice error: " + err);
+    if (err !== "not-allowed" && err !== "interrupted" && err !== "canceled"){
+      if (dropVoice("failed (" + err + ")")) return;
+    }
+    done(false);
+  };
   const fire = () => {
     try{ speechSynthesis.resume(); }catch(e){} /* Mac Chrome parks the speech queue paused; resume unsticks it */
     /* re-resolve the voice at speak time: a cached SpeechSynthesisVoice goes stale on Mac Chrome and speak() silently never starts */
     try{
-      if (voice){
+      if (voice && !voiceDefaulted){
         const fresh = speechSynthesis.getVoices().find(v => v.name === voice.name && v.lang === voice.lang);
         u.voice = fresh || null;
-      }
+      } else { u.voice = null; }
+      spokenVoice = u.voice ? u.voice.name.toUpperCase() : "";
     }catch(e){}
     try{ speechSynthesis.speak(u); }catch(e){ done(false); }
   };
